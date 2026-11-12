@@ -27,3 +27,8 @@ new_sqlite_classes = ["Hub"]
 
 [observability]
 enabled = true
+
+# Run the worker next to the D1 database (Frankfurt) instead of next to the user:
+# one network hop from the phone, then every DB query is local (~1ms instead of ~50ms each).
+[placement]
+mode = "smart"

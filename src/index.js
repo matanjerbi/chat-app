@@ -37,8 +37,10 @@ function hub(env) { return env.HUB.get(env.HUB.idFromName('global')); }
 async function push(env, body) {
   try { await hub(env).fetch('https://hub/push', { method: 'POST', body: JSON.stringify(body) }); } catch (e) {}
 }
+let onlineCache = null;
 async function onlineSet(env) {
-  try { const r = await hub(env).fetch('https://hub/online'); const d = await r.json(); return { users: new Set(d.users), rooms: d.rooms || {} }; }
+  if (onlineCache && now() - onlineCache.at < 4000) return onlineCache.v;
+  try { const r = await hub(env).fetch('https://hub/online'); const d = await r.json(); const v = { users: new Set(d.users), rooms: d.rooms || {} }; onlineCache = { at: now(), v }; return v; }
   catch (e) { return { users: new Set(), rooms: {} }; }
 }
 async function blockedIds(env, uid) {
@@ -49,13 +51,21 @@ async function log(env, admin, action, target, details) {
   await env.DB.prepare('INSERT INTO admin_log (id,admin,action,target,details,created) VALUES (?,?,?,?,?,?)').bind(id(), admin, action, target || null, details ? JSON.stringify(details) : null, now()).run();
 }
 
-async function auth(req, env, url) {
+// token -> user row, kept for a few seconds per isolate so a burst of API calls costs one DB read
+const authCache = new Map();
+export function forgetUser(uid) { for (const [k, v] of authCache) if (v.u.id === uid) authCache.delete(k); }
+async function auth(req, env, url, ctx) {
   const h = req.headers.get('authorization') || '';
   const tok = h.startsWith('Bearer ') ? h.slice(7) : url.searchParams.get('token');
   if (!tok) return null;
-  const u = await env.DB.prepare('SELECT * FROM users WHERE token_hash=?').bind(await sha(tok)).first();
-  if (!u) return null;
-  if (now() - u.last_seen > 60000) await env.DB.prepare('UPDATE users SET last_seen=? WHERE id=?').bind(now(), u.id).run();
+  const th = await sha(tok);
+  const c = authCache.get(th);
+  if (c && now() - c.at < 10000 && req.method === 'GET') return c.u;
+  const u = await env.DB.prepare('SELECT * FROM users WHERE token_hash=?').bind(th).first();
+  if (!u) { authCache.delete(th); return null; }
+  if (authCache.size > 5000) authCache.clear();
+  authCache.set(th, { u, at: now() });
+  if (now() - u.last_seen > 60000) ctx.waitUntil(env.DB.prepare('UPDATE users SET last_seen=? WHERE id=?').bind(now(), u.id).run());
   return u;
 }
 
@@ -119,7 +129,7 @@ async function api(req, env, url, p, ctx) {
   }
 
   /* --- authed --- */
-  const me = await auth(req, env, url);
+  const me = await auth(req, env, url, ctx);
   if (!me) return E('לא מחובר', 401);
   if (me.banned) return J({ error: 'החשבון הושעה', banned: true, reason: me.ban_reason }, 403);
 
@@ -157,6 +167,7 @@ async function api(req, env, url, p, ctx) {
     if (b.incognito !== undefined) { if (b.incognito && me.premium_until < now()) return E('אינקוגניטו זמין למנויי פרימיום'); f.incognito = b.incognito ? 1 : 0; }
     const keys = Object.keys(f);
     if (keys.length) await env.DB.prepare(`UPDATE users SET ${keys.map(k => k + '=?').join(',')} WHERE id=?`).bind(...keys.map(k => f[k]), me.id).run();
+    forgetUser(me.id);
     const u = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(me.id).first();
     return J({ user: selfUser(u) });
   }
@@ -171,12 +182,12 @@ async function api(req, env, url, p, ctx) {
     const md = await env.DB.prepare('SELECT * FROM media WHERE id=? AND owner=? AND purpose=? AND removed=0').bind(b.media, me.id, 'avatar').first();
     if (!md) return E('תמונה לא נמצאה');
     if (me.avatar && me.avatar !== md.id) { await env.DB.prepare('UPDATE media SET removed=1 WHERE id=?').bind(me.avatar).run(); ctx.waitUntil(env.MEDIA.delete('m:' + me.avatar)); }
-    await env.DB.prepare('UPDATE users SET avatar=? WHERE id=?').bind(md.id, me.id).run();
+    await env.DB.prepare('UPDATE users SET avatar=? WHERE id=?').bind(md.id, me.id).run(); forgetUser(me.id);
     return J({ user: selfUser({ ...me, avatar: md.id }) });
   }
   if (p === '/api/me/avatar' && m === 'DELETE') {
     if (me.avatar) { await env.DB.prepare('UPDATE media SET removed=1 WHERE id=?').bind(me.avatar).run(); ctx.waitUntil(env.MEDIA.delete('m:' + me.avatar)); }
-    await env.DB.prepare('UPDATE users SET avatar=NULL WHERE id=?').bind(me.id).run();
+    await env.DB.prepare('UPDATE users SET avatar=NULL WHERE id=?').bind(me.id).run(); forgetUser(me.id);
     return J({ user: selfUser({ ...me, avatar: null }) });
   }
 
@@ -214,11 +225,14 @@ async function api(req, env, url, p, ctx) {
     if (!u) return E('המשתמש לא נמצא', 404);
     const bl = await blockedIds(env, me.id);
     if (bl.has(u.id)) return E('המשתמש לא זמין', 404);
-    const on = await onlineSet(env);
-    const g = await env.DB.prepare('SELECT g.id,g.media,g.private FROM gallery g JOIN media m ON m.id=g.media WHERE g.owner=? AND m.removed=0 ORDER BY g.created DESC').bind(u.id).all();
-    const granted = !!(await env.DB.prepare('SELECT 1 FROM grants WHERE owner=? AND viewer=?').bind(u.id, me.id).first());
-    const requested = !!(await env.DB.prepare('SELECT 1 FROM gallery_requests WHERE requester=? AND owner=?').bind(me.id, u.id).first());
-    const iGranted = !!(await env.DB.prepare('SELECT 1 FROM grants WHERE owner=? AND viewer=?').bind(me.id, u.id).first());
+    const [on, g, gr1, rq, gr2] = await Promise.all([
+      onlineSet(env),
+      env.DB.prepare('SELECT g.id,g.media,g.private FROM gallery g JOIN media m ON m.id=g.media WHERE g.owner=? AND m.removed=0 ORDER BY g.created DESC').bind(u.id).all(),
+      env.DB.prepare('SELECT 1 FROM grants WHERE owner=? AND viewer=?').bind(u.id, me.id).first(),
+      env.DB.prepare('SELECT 1 FROM gallery_requests WHERE requester=? AND owner=?').bind(me.id, u.id).first(),
+      env.DB.prepare('SELECT 1 FROM grants WHERE owner=? AND viewer=?').bind(me.id, u.id).first(),
+    ]);
+    const granted = !!gr1, requested = !!rq, iGranted = !!gr2;
     return J({
       user: publicUser(u, on.users), granted, requested, i_granted: iGranted,
       gallery: g.results.map(x => ({ id: x.id, media: (x.private && !granted) ? null : x.media, private: !!x.private })),
@@ -399,9 +413,11 @@ async function api(req, env, url, p, ctx) {
     if (!md || (md.removed && me.role !== 'admin')) return E('לא נמצא', 404);
     const ok = await canSeeMedia(env, me, md);
     if (!ok) return E('אין גישה', 403);
-    const obj = await env.MEDIA.getWithMetadata('m:' + md.id, { type: 'arrayBuffer' });
+    let obj = await env.MEDIA.getWithMetadata('m:' + md.id, { type: 'arrayBuffer' });
+    if (!obj.value) { await new Promise(r => setTimeout(r, 700)); obj = await env.MEDIA.getWithMetadata('m:' + md.id, { type: 'arrayBuffer' }); }
     if (!obj.value) return E('לא נמצא', 404);
-    return new Response(obj.value, { headers: { 'content-type': md.mime, 'cache-control': 'private, no-store' } });
+    const cc = md.purpose === 'avatar' || md.purpose === 'gallery' ? 'private, max-age=3600' : 'private, no-store';
+    return new Response(obj.value, { headers: { 'content-type': md.mime, 'cache-control': cc } });
   }
 
   /* gallery & grants */
@@ -642,6 +658,7 @@ async function admin(req, env, url, p, m, me, body, ctx) {
       if (r.reason === 'ncii' && r.media && b.restore) st.push(env.DB.prepare('UPDATE media SET removed=0 WHERE id=?').bind(r.media));
     } else return E('פעולה לא תקינה');
     await env.DB.batch(st);
+    forgetUser(r.target);
     await log(env, me.id, 'report_' + b.action, r.target, { report: r.id, note: b.note });
     return J({ ok: true });
   }
@@ -665,6 +682,7 @@ async function admin(req, env, url, p, m, me, body, ctx) {
         ctx.waitUntil(push(env, { kick: u.id }));
       }
     }
+    forgetUser(u.id);
     await log(env, me.id, b.approve ? 'verify_approve' : 'verify_reject', u.id, { note: b.note, underage: !!b.underage });
     return J({ ok: true });
   }
@@ -691,6 +709,7 @@ async function admin(req, env, url, p, m, me, body, ctx) {
     else if (a === 'unverify') await env.DB.prepare('UPDATE users SET verified=0, verified_gender=NULL WHERE id=?').bind(u.id).run();
     else if (a === 'delete') { if (u.id === me.id) return E('לא ניתן למחוק את עצמך מכאן'); await deleteUser(env, u.id); ctx.waitUntil(push(env, { kick: u.id })); }
     else return E('פעולה לא תקינה');
+    forgetUser(u.id);
     await log(env, me.id, 'user_' + a, u.id, b);
     return J({ ok: true });
   }

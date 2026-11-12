@@ -45,13 +45,22 @@ async function api(path, opt = {}) {
   if (!r.ok) throw new Error(d.error || 'שגיאה');
   return d;
 }
+const mediaPending = {};
 async function mediaUrl(id) {
   if (!id) return null;
   if (mediaCache[id]) return mediaCache[id];
-  const r = await fetch('/api/media/' + id, { headers: { authorization: 'Bearer ' + TOKEN } });
-  if (!r.ok) return null;
-  const u = URL.createObjectURL(await r.blob());
-  mediaCache[id] = u; return u;
+  if (mediaPending[id]) return mediaPending[id];
+  return (mediaPending[id] = (async () => {
+    try {
+      for (let i = 0; i < 3; i++) { // a freshly uploaded image can take a moment to be readable everywhere
+        const r = await fetch('/api/media/' + id, { headers: { authorization: 'Bearer ' + TOKEN } });
+        if (r.ok) return (mediaCache[id] = URL.createObjectURL(await r.blob()));
+        if (r.status !== 404) return null;
+        await new Promise(res => setTimeout(res, 1200 * (i + 1)));
+      }
+      return null;
+    } finally { delete mediaPending[id]; }
+  })());
 }
 function hydrateImgs(root = document) {
   root.querySelectorAll('[data-media]:not([data-loaded])').forEach(async el => {
