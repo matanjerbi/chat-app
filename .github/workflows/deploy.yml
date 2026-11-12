@@ -28,6 +28,18 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Sync login settings (Google / email) from GitHub secrets
+        run: |
+          for k in GOOGLE_CLIENT_ID BREVO_API_KEY MAIL_FROM; do
+            v="${!k}"
+            if [ -n "$v" ]; then printf '%s' "$v" | npx wrangler secret put "$k"; fi
+          done
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy clean address (klik-chat.pages.dev)
         working-directory: pages
         run: |

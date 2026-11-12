@@ -42,6 +42,7 @@ async function api(path, opt = {}) {
   let d = {}; try { d = await r.json(); } catch (e) {}
   if (r.status === 401 && TOKEN) { logoutLocal(); throw new Error('נותקת'); }
   if (r.status === 403 && d.banned) { showBanned(d.reason); throw new Error('banned'); }
+  if (r.status === 403 && d.need_account) { accountSheet(); const e = new Error(d.error); e.handled = true; throw e; }
   if (!r.ok) throw new Error(d.error || 'שגיאה');
   return d;
 }
@@ -143,6 +144,7 @@ function onWS(m) {
       loadDms().then(() => { tab = 'chats'; render(); openChat(m.dm); toast(`⚡ קאץ'! התחברת ל${m.other.nick}`); });
       break;
     case 'kicked': showBanned(); break;
+    case 'need_account': catching = false; if (tab === 'catch') render(); accountSheet(); break;
     case 'call_in': incomingCall(m.from); break;
     case 'call_ringing': break;
     case 'call_accepted': callAccepted(); break;
@@ -174,6 +176,9 @@ function updateBadge() {
 }
 
 /* ---------- boot ---------- */
+let CONFIG = { google_client_id: null, email_login: false, accounts_required: false };
+const configReady = fetch('/api/public/config').then(r => r.json()).then(c => { CONFIG = c; }).catch(() => {});
+const isGuest = () => CONFIG.accounts_required && ME && !ME.account;
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   if (!TOKEN) return bindLanding();
@@ -208,10 +213,10 @@ function bindLanding() {
       const d = await api('/register', { body: { nick, age, gender: g, looking: ['talk', 'flirt'], lvl: 'flirt', emo: RANDOM_EMO(), agree: true } });
       TOKEN = d.token; try { localStorage.setItem('blush_token', TOKEN); } catch (x) {}
       ME = d.user; await boot();
-      toast('ברוך/ה הבא/ה! הכול פה חינם 🎉');
-    } catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = 'כניסה לצ׳אט — חינם ⚡'; }
+      toast('ברוך/ה הבא/ה 👋');
+    } catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = 'כניסה ⚡'; }
   };
-  $('#jHasKey').onclick = e => { e.preventDefault(); sheet(`<h2>כניסה עם מפתח גישה</h2><p class="mut small" style="margin:8px 0 12px">הדבק/י את המפתח ששמרת מהמכשיר הקודם (בלשונית "אני" ← "גישה ממכשיר אחר").</p><input id="tkIn" placeholder="מפתח גישה" style="direction:ltr"><button class="btn" style="margin-top:10px" onclick="useToken()">כניסה</button>`); };
+  $('#jHasKey').onclick = e => { e.preventDefault(); accountSheet('login'); };
   fetch('/api/public/stats').then(r => r.json()).then(d => {
     const o = $('#lOnline'); if (o) o.textContent = d.online >= 5 ? `● ${d.online} מחוברים עכשיו` : '● פעיל עכשיו';
     const box = $('#lRooms'); if (box && d.rooms) box.innerHTML = d.rooms.map(r => `<div class="lroom">${esc(r.emo)} ${esc(r.name)}${r.online >= 3 ? `<i>● ${r.online}</i>` : ''}</div>`).join('');
@@ -225,7 +230,6 @@ function render() {
     <div class="logo">קליק</div>
     <span class="tag g">● ${ONLINE} מחוברים</span>
     <div class="grow"></div>
-    ${isPrem() ? '<span class="prem-pill">👑 פרימיום</span>' : '<button class="prem-pill" onclick="openPremium()">👑 שדרוג</button>'}
   </div>
   <main id="main">${tabHtml()}</main>
   <nav>
@@ -282,7 +286,7 @@ function roomView() {
   const msgs = roomMsgs[view.id];
   return `<div class="top"><button class="icon-btn" onclick="closeView()">→</button><div style="font-size:24px">${esc(r.emo)}</div><div class="grow"><div style="font-weight:700">${esc(r.name)}</div><div class="mut small">${esc(r.descr || '')}</div></div>${lvlTag(r.lvl)}</div>
   <div class="msgs" id="msgs">${msgs ? (`<div class="m sys">כבוד הדדי. אסור לשתף פרטים מזהים של אחרים. הודעה לא נעימה? לחץ/י על ההודעה ← דיווח.</div>` + (msgs.length ? msgs.map(x => roomMsgHtml(x).trim().replace(/^<div /, `<div data-id="${x.id}" `)).join("") : '<div class="m sys empty-note">עוד אין הודעות. תהיה/י הראשון/ה 👋</div>')) : '<div class="spinner"></div>'}</div>
-  <div class="composer"><input id="rin" maxlength="500" placeholder="כתוב/י לחדר…" onkeydown="if(event.key==='Enter')sendRoom()"><button class="send" onclick="sendRoom()">➤</button></div>`;
+  <div class="composer"><input id="rin" maxlength="500" ${isGuest() ? 'readonly onclick="accountSheet()" placeholder="כדי לכתוב — שמירת חשבון ✍️"' : 'placeholder="כתוב/י לחדר…"'} onkeydown="if(event.key==='Enter')sendRoom()"><button class="send" onclick="sendRoom()">➤</button></div>`;
 }
 function roomMsgHtml(m) {
   const mine = m.user.id === ME.id;
@@ -349,7 +353,7 @@ async function openProfile(id) {
   ${d.gallery.length ? `<div class="sec-title" style="margin-top:10px">📷 גלריה</div>
   <div class="gal">${d.gallery.map(g => g.media ? `<div class="g" data-media="${g.media}" onclick="viewImg('${g.media}')"></div>` : `<div class="g" style="display:grid;place-items:center;font-size:24px">🔒</div>`).join("")}</div>
   ${d.gallery.some(g => !g.media) ? `<button class="btn sec" style="margin-top:8px" onclick="askGallery('${id}')" ${d.requested ? 'disabled' : ''}>${d.requested ? '⏳ הבקשה נשלחה' : '🔓 בקש/י גישה לגלריה הפרטית'}</button>` : ''}` : ''}
-  <div class="row" style="margin-top:14px"><button class="btn" onclick="closeSheet();startDm('${id}')">💬 הודעה</button><button class="btn sec" style="width:auto;padding:14px 18px" onclick="closeSheet();startCall('${id}')">📹${isPrem() ? '' : ' 👑'}</button></div>
+  <div class="row" style="margin-top:14px"><button class="btn" onclick="closeSheet();startDm('${id}')">💬 הודעה</button><button class="btn sec" style="width:auto;padding:14px 18px" onclick="closeSheet();startCall('${id}')">📹</button></div>
   <div class="row" style="margin-top:10px"><button class="btn sec sm grow" onclick="toggleGrant('${id}',${d.i_granted})">${d.i_granted ? '🔒 בטל/י גישה לגלריה שלי' : '🔑 פתח/י לו/ה את הגלריה שלי'}</button></div>
   <div class="row" style="margin-top:12px;justify-content:center;gap:24px"><button class="mut small" onclick="blockUser('${id}')">🚫 חסימה</button><button class="small" style="color:var(--bad)" onclick='reportSheet("${id}",${JSON.stringify(u.avatar ? { media: u.avatar } : {})})'>⚠️ דיווח</button></div>`);
   hydrateImgs($('.sheet'));
@@ -425,7 +429,7 @@ function chatView() {
   ${pend && info.pending_by === ME.id ? `<div class="pend">⏳ ממתין לאישור מעבר לרמה ${LEVELS.find(l => l[0] === pend)[2]}</div>` : ''}
   <div class="msgs" id="msgs">${!msgs.length ? `<div class="m sys empty-note">אין הודעות בשיחה. <a href="#" style="color:var(--pink2)" onclick="event.preventDefault();deleteDm()">למחוק את השיחה מהרשימה?</a></div>` : ''}${msgs.map(x => msgHtml(x).trim().replace(/^<div /, `<div data-id="${x.id}" `)).join("")}<div class="typing" id="typ" style="display:none">${esc(u.nick)} מקליד/ה…</div></div>
   ${!msgs.some(m => m.mine) ? `<div class="icebreak">${ICE.slice(0, 5).map(q => `<span class="chip" onclick="$('#cin').value=this.textContent;sendChat()">${q}</span>`).join("")}</div>` : ''}
-  <div class="composer"><button class="att" ${theyWrote ? '' : 'style="opacity:.35"'} onclick="${theyWrote ? 'pickImg()' : `toast('אפשר לשלוח תמונות אחרי שהצד השני עונה לך — כדי שאף אחד לא יקבל תמונה בהפתעה')`}">📷</button><input id="cin" maxlength="2000" placeholder="הודעה…" oninput="typingPing()" onkeydown="if(event.key==='Enter')sendChat()"><button class="send" onclick="sendChat()">➤</button></div>
+  <div class="composer"><button class="att" ${theyWrote ? '' : 'style="opacity:.35"'} onclick="${theyWrote ? 'pickImg()' : `toast('אפשר לשלוח תמונות אחרי שהצד השני עונה לך — כדי שאף אחד לא יקבל תמונה בהפתעה')`}">📷</button><input id="cin" maxlength="2000" ${isGuest() ? 'readonly onclick="accountSheet()" placeholder="כדי לכתוב — שמירת חשבון ✍️"' : 'placeholder="הודעה…"'} oninput="typingPing()" onkeydown="if(event.key==='Enter')sendChat()"><button class="send" onclick="sendChat()">➤</button></div>
   ${info.catch ? `<div style="display:flex;gap:8px;padding:0 10px 10px;background:var(--bg2)"><button class="btn sec sm grow" onclick="nextCatch()">⏭️ הבא</button><button class="btn sm grow" onclick="keepCatch()">💾 שמור שיחה</button></div>` : ''}`;
 }
 function sysText(t) {
@@ -553,7 +557,6 @@ const ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:st
 let call = null; // {peer, pc, local, role, timer}
 function callErr(r) {
   const msg = { premium: null, verify: 'שיחות וידאו פתוחות רק למשתמשים מאומתים — כדי שלא יהיו מתחזים', other_unverified: 'הצד השני עוד לא מאומת/ת — וידאו רק בין מאומתים', offline: 'המשתמש/ת לא מחובר/ת כרגע', blocked: 'לא ניתן להתקשר', notfound: 'המשתמש לא נמצא' }[r];
-  if (r === 'premium') return openPremium('video');
   if (r === 'verify') return verifySheet();
   toast(msg || 'לא ניתן להתקשר');
 }
@@ -646,7 +649,6 @@ function meTab() {
   const me = ME;
   const vs = me.verified ? `<span class="vbadge">✔ מאומת/ת</span>` : me.verify_state === 1 ? '<span class="tag">⏳ אימות בבדיקה</span>' : `<button class="tag" style="background:#5cc8ff22;color:#5cc8ff" onclick="verifySheet()">✔ לאימות</button>`;
   return `<div class="card row" style="gap:14px"><div style="position:relative;cursor:pointer" onclick="avatarSheet()">${av(me, 64, false)}<span style="position:absolute;bottom:-2px;left:-2px;background:var(--pink);border-radius:50%;width:22px;height:22px;display:grid;place-items:center;font-size:12px">📷</span></div><div class="grow"><div style="font-weight:800;font-size:19px">${esc(me.nick)}</div><div class="mut small">${me.age} · ${GLBL[me.gender]} · ${AREAS[me.area]}</div><div style="margin-top:5px">${lvlTag(me.lvl)} ${vs}</div></div><button class="btn sec sm" onclick="editMe()">עריכה</button></div>
-  ${isPrem() ? `<div class="card row" style="border-color:#ffc25c88"><span style="font-size:24px">👑</span><div class="grow small"><strong>פרימיום פעיל</strong><div class="mut">עד ${new Date(me.premium_until).toLocaleDateString("he-IL")}</div></div></div>` : `<div class="hero row" onclick="openPremium()" style="cursor:pointer"><span style="font-size:30px">👑</span><div class="grow"><strong>שדרג/י לפרימיום</strong><div class="mut small">וידאו, אינקוגניטו ועוד</div></div><span>←</span></div>`}
   ${me.role === 'admin' ? `<a href="/admin" class="card row" style="text-decoration:none;color:inherit;border-color:var(--vio)"><span style="font-size:24px">🛡️</span><div class="grow"><strong>אזור אדמין</strong></div><span>←</span></a>` : ''}
   <div class="sec-title">📷 הגלריה שלי <span class="mut small">${GAL.gallery.length}/30</span></div>
   <div class="gal">${GAL.gallery.map(g => `<div class="g" data-media="${g.media}" onclick="galItem('${g.id}',${g.private})"><span>${g.private ? '🔒 פרטית' : '🌐 ציבורית'}</span></div>`).join("")}<div class="g add" onclick="addGallery()">＋</div></div>
@@ -654,13 +656,15 @@ function meTab() {
   <div class="card">${GAL.grants.length ? GAL.grants.map(u => `<div class="setrow">${av(u, 34, false)}<span class="grow">${esc(u.nick)}</span><button class="btn sec sm" onclick="revoke('${u.id}')">בטל גישה</button></div>`).join("") : '<div class="mut small">אף אחד עדיין. את/ה מחליט/ה למי לפתוח — ואפשר לבטל בכל רגע.</div>'}</div>
   <div class="sec-title">⚙️ הגדרות</div>
   <div class="card">
-    <div class="setrow"><span class="grow">🕶️ מצב אינקוגניטו ${isPrem() ? '' : '👑'}<div class="mut small">לא מופיע/ה ברשימת האנשים</div></span><span class="switch ${me.incognito ? 'on' : ''}" onclick="patchMe({incognito:${!me.incognito}})"></span></div>
+    <div class="setrow"><span class="grow">🕶️ מצב אינקוגניטו<div class="mut small">לא מופיע/ה ברשימת האנשים</div></span><span class="switch ${me.incognito ? 'on' : ''}" onclick="patchMe({incognito:${!me.incognito}})"></span></div>
     <div class="setrow"><span class="grow">🔞 להציג תמונות מפורשות<div class="mut small">כשכבוי — הן מוסתרות לגמרי</div></span><span class="switch ${me.show_explicit ? 'on' : ''}" onclick="patchMe({show_explicit:${!me.show_explicit}})"></span></div>
     <div class="setrow" onclick="enableNotifs()"><span class="grow">🔔 התראות על הודעות</span>←</div>
     <div class="setrow" onclick="installSheet()"><span class="grow">📲 התקנה על המכשיר</span>←</div>
     <div class="setrow" onclick="safetySheet()"><span class="grow">🛡️ מרכז בטיחות וכללים</span>←</div>
     <div class="setrow" onclick="blocksSheet()"><span class="grow">🚫 משתמשים חסומים</span>←</div>
-    <div class="setrow" onclick="tokenSheet()"><span class="grow">🔐 גישה מהמכשיר אחר</span>←</div>
+    ${me.account
+      ? `<div class="setrow"><span class="grow">✔ ${me.account.google ? 'מחובר/ת עם Google' : 'מחובר/ת עם מייל'}<div class="mut small" style="direction:ltr;text-align:right">${esc(me.account.email || '')}</div></span><button class="btn sec sm" onclick="logout()">התנתקות</button></div>`
+      : `<div class="setrow" onclick="accountSheet()"><span class="grow">🔐 שמירת החשבון (Google / מייל)<div class="mut small">כרגע זה חשבון אורח — כדי לכתוב ולא לאבד אותו</div></span>←</div>`}
     <div class="setrow" style="color:var(--bad)" onclick="sheet('<h2>מחיקת חשבון</h2><p class=mut style=margin:10px\\ 0\\ 16px>כל השיחות, התמונות והפרופיל יימחקו לצמיתות.</p><button class=btn style=background:var(--bad) onclick=wipe()>מחק/י הכול</button>')"><span class="grow">🗑️ מחיקת החשבון וכל המידע</span></div>
   </div>`;
 }
@@ -717,6 +721,73 @@ async function blocksSheet() {
   sheet('<h2>חסומים</h2>' + (d.blocks.length ? d.blocks.map(u => `<div class="setrow"><span class="grow">${esc(u.emo)} ${esc(u.nick)}</span><button class="btn sec sm" onclick="unblock('${u.id}')">שחרור</button></div>`).join('') : '<p class="mut">אין משתמשים חסומים</p>'));
 }
 async function unblock(id) { await api('/blocks/' + id, { method: 'DELETE' }).catch(() => {}); blocksSheet(); }
+/* ---------- permanent account (Google / email code) ---------- */
+// mode: 'create' (guest -> permanent, default) | 'login' (from the landing page / another device)
+async function accountSheet(mode = 'create') {
+  await configReady;
+  const login = mode === 'login';
+  const none = !CONFIG.google_client_id && !CONFIG.email_login;
+  sheet(`<div style="text-align:center"><div style="font-size:44px">${login ? '👋' : '✍️'}</div>
+    <h2>${login ? 'התחברות לחשבון' : 'עוד צעד קטן וכותבים'}</h2>
+    <p class="mut small" style="margin:6px 0 16px">${login ? 'התחבר/י עם מה שקישרת לחשבון.' : 'חשבון קבוע מאפשר לשלוח הודעות ולחזור אליו מכל מכשיר. המייל לא מוצג לאף אחד.'}</p></div>
+    ${none ? '<p class="mut" style="text-align:center">ההתחברות תיפתח בקרוב.</p>' : ''}
+    ${CONFIG.google_client_id ? '<div id="gbtn" style="display:flex;justify-content:center;min-height:44px"></div>' : ''}
+    ${CONFIG.google_client_id && CONFIG.email_login ? '<div class="mut small" style="text-align:center;margin:14px 0">או עם מייל</div>' : ''}
+    ${CONFIG.email_login ? `<div id="emBox"><input id="emIn" type="email" inputmode="email" autocomplete="email" placeholder="כתובת מייל" style="direction:ltr;text-align:right">
+      <button class="btn" id="emGo" style="margin-top:8px" onclick="emailStart()">שליחת קוד למייל</button></div>` : ''}
+    <div class="err" id="accErr" style="text-align:center;margin-top:8px"></div>`);
+  if (CONFIG.google_client_id) renderGoogle();
+}
+function loadGis() {
+  if (window.google && google.accounts) return Promise.resolve();
+  return new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+}
+async function renderGoogle() {
+  try {
+    await loadGis();
+    google.accounts.id.initialize({ client_id: CONFIG.google_client_id, callback: r => authDone(api('/auth/google', { body: { credential: r.credential } })) });
+    const el = $('#gbtn'); if (el) google.accounts.id.renderButton(el, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', locale: 'he', width: Math.min(320, el.clientWidth || 300) });
+  } catch (e) { const el = $('#gbtn'); if (el) el.innerHTML = '<span class="mut small">לא הצלחנו לטעון את Google</span>'; }
+}
+let emailPending = '';
+async function emailStart() {
+  const email = $('#emIn').value.trim(); const err = $('#accErr'); err.textContent = '';
+  if (!/^\S+@\S+\.\S+$/.test(email)) { err.textContent = 'כתובת מייל לא תקינה'; return; }
+  const b = $('#emGo'); b.disabled = true; b.textContent = 'שולח…';
+  try {
+    await api('/auth/email/start', { body: { email } });
+    emailPending = email;
+    $('#emBox').innerHTML = `<p class="small" style="text-align:center;margin-bottom:8px">שלחנו קוד בן 6 ספרות אל<br><b style="direction:ltr;display:inline-block">${esc(email)}</b></p>
+      <input id="codeIn" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" style="text-align:center;font-size:26px;letter-spacing:10px;direction:ltr">
+      <button class="btn" id="codeGo" style="margin-top:8px" onclick="emailVerify()">אישור</button>
+      <button class="mut small" style="display:block;margin:10px auto 0" onclick="accountSheet()">שינוי מייל / שליחה מחדש</button>`;
+    const ci = $('#codeIn'); ci.focus(); ci.oninput = () => { if (ci.value.replace(/\D/g, '').length === 6) emailVerify(); };
+  } catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = 'שליחת קוד למייל'; }
+}
+function emailVerify() {
+  const c = $('#codeIn').value.replace(/\D/g, ''); if (c.length !== 6) return;
+  $('#codeGo').disabled = true;
+  authDone(api('/auth/email/verify', { body: { email: emailPending, code: c } }), () => { const b = $('#codeGo'); if (b) b.disabled = false; });
+}
+async function authDone(promise, onFail) {
+  try {
+    const d = await promise;
+    if (d.token) { // logged into an existing permanent account (maybe from another device)
+      TOKEN = d.token; try { localStorage.setItem('blush_token', TOKEN); } catch (e) {}
+      closeSheet(); toast(`שלום ${d.user.nick} 👋`); ME = d.user; view = null; await boot(); return;
+    }
+    ME = d.user; closeSheet(); if (view) openView(view, true); else render(); toast('החשבון נשמר ✔ עכשיו אפשר לכתוב');
+  } catch (e) {
+    if (e.handled) return;
+    const err = $('#accErr'); if (err) err.textContent = e.message; else toast(e.message);
+    onFail && onFail();
+  }
+}
+async function logout() {
+  try { await api('/logout', { method: 'POST' }); } catch (e) {}
+  logoutLocal(); location.reload();
+}
+
 function tokenSheet() {
   sheet(`<h2>🔐 גישה ממכשיר אחר</h2><p class="mut small" style="margin:8px 0 12px">אין סיסמה ואין מייל — זה מה שמשאיר אותך אנונימי/ת. כדי להתחבר ממכשיר אחר, העתק/י את מפתח הגישה ושמור/י אותו במקום בטוח. מי שיש לו את המפתח — נכנס לחשבון שלך.</p>
   <textarea readonly rows="3" style="font-size:12px;direction:ltr" onclick="this.select()">${TOKEN}</textarea>

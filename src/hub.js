@@ -1,4 +1,4 @@
-import { getOrCreateDm, callCheck } from './index.js';
+import { getOrCreateDm, callCheck, isFull, accountsOn } from './index.js';
 
 const pairKey = (a, b) => 'call:' + [a, b].sort().join(':');
 
@@ -65,6 +65,7 @@ export class Hub {
       case 'call': {
         const me = await this.env.DB.prepare('SELECT * FROM users WHERE id=?').bind(uid).first();
         if (!me || me.banned) return;
+        if (accountsOn(this.env) && !isFull(me)) return this.send(ws, { t: 'need_account' });
         const chk = await callCheck(this.env, me, m.to);
         if (!chk.ok) return this.send(ws, { t: 'call_error', reason: chk.reason });
         if (!this.isOnline(m.to)) return this.send(ws, { t: 'call_error', reason: 'offline' });
@@ -95,6 +96,7 @@ export class Hub {
     const env = this.env;
     const me = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(a.uid).first();
     if (!me || me.banned) return;
+    if (accountsOn(env) && !isFull(me)) return this.send(ws, { t: 'need_account' });
     const want = { g: ['all', 'm', 'f', 'nb', 'c'].includes(m.g) ? m.g : 'all', lvl: ['soft', 'flirt', 'x'].includes(m.lvl) ? m.lvl : 'flirt', gender: me.gender, at: Date.now() };
     const blocks = await env.DB.prepare('SELECT target x FROM blocks WHERE user=? UNION SELECT user x FROM blocks WHERE target=?').bind(me.id, me.id).all();
     const bl = new Set(blocks.results.map(x => x.x));

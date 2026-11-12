@@ -30,7 +30,53 @@ function selfUser(u) {
     ...publicUser(u), show_explicit: !!u.show_explicit, incognito: !!u.incognito, role: u.role,
     verify_state: u.verified, verify_note: u.verify_note, premium_until: u.premium_until,
     premium: u.premium_until > now(), created: u.created,
+    account: isFull(u) ? { google: !!u.google_sub, email: maskEmail(u.email) } : null,
   };
+}
+
+/* ---------- accounts ---------- */
+export const isFull = u => !!(u && (u.email_verified || u.google_sub));
+export const accountsOn = env => !!(env.GOOGLE_CLIENT_ID || env.BREVO_API_KEY);
+const needAccount = (env, me) => accountsOn(env) && !isFull(me);
+const NEED = () => J({ error: 'כדי לשלוח הודעות צריך חשבון קבוע — לוקח 10 שניות', need_account: true }, 403);
+const normEmail = e => String(e || '').trim().toLowerCase();
+const validEmail = e => /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i.test(e);
+function maskEmail(e) { if (!e) return null; const [a, d] = e.split('@'); return (a.length <= 2 ? a[0] + '*' : a.slice(0, 2) + '***') + '@' + d; }
+
+let jwks = null;
+async function googleKeys() {
+  if (jwks && now() - jwks.at < 3600e3) return jwks.keys;
+  const r = await fetch('https://www.googleapis.com/oauth2/v3/certs');
+  const d = await r.json(); jwks = { at: now(), keys: d.keys }; return d.keys;
+}
+const b64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function verifyGoogle(env, cred) {
+  const parts = String(cred || '').split('.');
+  if (parts.length !== 3) throw new Error('bad token');
+  const head = JSON.parse(new TextDecoder().decode(b64u(parts[0])));
+  const body = JSON.parse(new TextDecoder().decode(b64u(parts[1])));
+  const jwk = (await googleKeys()).find(k => k.kid === head.kid);
+  if (!jwk || head.alg !== 'RS256') throw new Error('unknown key');
+  const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64u(parts[2]), new TextEncoder().encode(parts[0] + '.' + parts[1]));
+  if (!ok) throw new Error('bad signature');
+  if (body.aud !== env.GOOGLE_CLIENT_ID) throw new Error('wrong audience');
+  if (!['accounts.google.com', 'https://accounts.google.com'].includes(body.iss)) throw new Error('wrong issuer');
+  if (body.exp * 1000 < now()) throw new Error('expired');
+  return body; // sub, email, email_verified
+}
+async function sendEmail(env, to, subject, html) {
+  const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ sender: { email: env.MAIL_FROM, name: 'קליק' }, to: [{ email: to }], subject, htmlContent: html }),
+  });
+  if (!r.ok) { console.error('email failed', r.status, await r.text()); throw new Error('mail'); }
+}
+async function newSession(env, uid) {
+  const token = crypto.randomUUID() + crypto.randomUUID();
+  await env.DB.prepare('INSERT INTO sessions (token_hash,user_id,created) VALUES (?,?,?)').bind(await sha(token), uid, now()).run();
+  return token;
 }
 
 function hub(env) { return env.HUB.get(env.HUB.idFromName('global')); }
@@ -61,7 +107,7 @@ async function auth(req, env, url, ctx) {
   const th = await sha(tok);
   const c = authCache.get(th);
   if (c && now() - c.at < 10000 && req.method === 'GET') return c.u;
-  const u = await env.DB.prepare('SELECT * FROM users WHERE token_hash=?').bind(th).first();
+  const u = await env.DB.prepare('SELECT * FROM users WHERE token_hash=?1 OR id=(SELECT user_id FROM sessions WHERE token_hash=?1)').bind(th).first();
   if (!u) { authCache.delete(th); return null; }
   if (authCache.size > 5000) authCache.clear();
   authCache.set(th, { u, at: now() });
@@ -101,6 +147,9 @@ async function api(req, env, url, p, ctx) {
 
   /* --- public --- */
   if (p === '/api/health') return J({ ok: true });
+  if (p === '/api/public/config') {
+    return J({ google_client_id: env.GOOGLE_CLIENT_ID || null, email_login: !!env.BREVO_API_KEY, accounts_required: accountsOn(env) });
+  }
   if (p === '/api/public/stats') {
     const on = await onlineSet(env);
     const r = await env.DB.prepare('SELECT id,name,emo,lvl FROM rooms WHERE hidden=0 AND official=1 ORDER BY created LIMIT 12').all();
@@ -128,6 +177,67 @@ async function api(req, env, url, p, ctx) {
     return J({ token, user: selfUser(u) });
   }
 
+  /* --- login / account linking (guest session optional) --- */
+  if (p === '/api/auth/google' && m === 'POST') {
+    if (!env.GOOGLE_CLIENT_ID) return E('התחברות עם Google עוד לא הוגדרה');
+    const b = await body();
+    let g; try { g = await verifyGoogle(env, b.credential); } catch (e) { return E('התחברות Google נכשלה, נסה/י שוב', 401); }
+    const cur = await auth(req, env, url, ctx);
+    const existing = await env.DB.prepare('SELECT * FROM users WHERE google_sub=?').bind(g.sub).first();
+    if (existing) {
+      if (existing.banned) return J({ error: 'החשבון הושעה', banned: true, reason: existing.ban_reason }, 403);
+      return J({ token: await newSession(env, existing.id), user: selfUser(existing), switched: !cur || cur.id !== existing.id });
+    }
+    if (!cur) return J({ error: 'אין חשבון שמקושר ל-Google הזה. היכנס/י קודם עם כינוי, ואז צור/י חשבון.', no_account: true }, 404);
+    if (cur.google_sub) return E('החשבון כבר מקושר לחשבון Google אחר');
+    const em = g.email_verified ? normEmail(g.email) : null;
+    const emTaken = em && await env.DB.prepare('SELECT 1 FROM users WHERE email=? AND id<>?').bind(em, cur.id).first();
+    await env.DB.prepare('UPDATE users SET google_sub=?, email=COALESCE(email,?), email_verified=CASE WHEN ? IS NOT NULL THEN 1 ELSE email_verified END WHERE id=?')
+      .bind(g.sub, emTaken ? null : em, emTaken ? null : em, cur.id).run();
+    forgetUser(cur.id);
+    const u = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(cur.id).first();
+    return J({ user: selfUser(u), linked: true });
+  }
+  if (p === '/api/auth/email/start' && m === 'POST') {
+    if (!env.BREVO_API_KEY) return E('התחברות במייל עוד לא הוגדרה');
+    const b = await body();
+    const email = normEmail(b.email);
+    if (!validEmail(email)) return E('כתובת מייל לא תקינה');
+    const recent = await env.DB.prepare('SELECT COUNT(*) n FROM email_codes WHERE email=? AND created>?').bind(email, now() - 3600e3).first();
+    if (recent.n >= 5) return E('נשלחו יותר מדי קודים. נסה/י שוב בעוד שעה', 429);
+    const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0');
+    await env.DB.prepare('INSERT INTO email_codes (id,email,code_hash,expires,created) VALUES (?,?,?,?,?)').bind(id(), email, await sha(email + ':' + code), now() + 10 * 60e3, now()).run();
+    try {
+      await sendEmail(env, email, `${code} — קוד הכניסה שלך לקליק`,
+        `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:16px;color:#222"><p>קוד הכניסה שלך:</p><p style="font-size:34px;font-weight:bold;letter-spacing:6px">${code}</p><p style="color:#777">הקוד תקף ל-10 דקות. אם לא ביקשת אותו — אפשר להתעלם מהמייל.</p></div>`);
+    } catch (e) { return E('שליחת המייל נכשלה, נסה/י שוב', 502); }
+    return J({ ok: true });
+  }
+  if (p === '/api/auth/email/verify' && m === 'POST') {
+    const b = await body();
+    const email = normEmail(b.email), code = String(b.code || '').replace(/\D/g, '');
+    const row = await env.DB.prepare('SELECT * FROM email_codes WHERE email=? AND expires>? ORDER BY created DESC LIMIT 1').bind(email, now()).first();
+    if (!row) return E('הקוד פג תוקף, בקש/י קוד חדש');
+    if (row.attempts >= 5) return E('יותר מדי ניסיונות, בקש/י קוד חדש', 429);
+    if (row.code_hash !== await sha(email + ':' + code)) {
+      await env.DB.prepare('UPDATE email_codes SET attempts=attempts+1 WHERE id=?').bind(row.id).run();
+      return E('הקוד שגוי');
+    }
+    await env.DB.prepare('DELETE FROM email_codes WHERE email=?').bind(email).run();
+    const cur = await auth(req, env, url, ctx);
+    const existing = await env.DB.prepare('SELECT * FROM users WHERE email=? AND email_verified=1').bind(email).first();
+    if (existing) {
+      if (existing.banned) return J({ error: 'החשבון הושעה', banned: true, reason: existing.ban_reason }, 403);
+      return J({ token: await newSession(env, existing.id), user: selfUser(existing), switched: !cur || cur.id !== existing.id });
+    }
+    if (!cur) return J({ error: 'אין חשבון עם המייל הזה. היכנס/י קודם עם כינוי, ואז צור/י חשבון.', no_account: true }, 404);
+    if (cur.email_verified && cur.email && cur.email !== email) return E('לחשבון כבר מקושר מייל אחר');
+    await env.DB.prepare('UPDATE users SET email=?, email_verified=1 WHERE id=?').bind(email, cur.id).run();
+    forgetUser(cur.id);
+    const u = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(cur.id).first();
+    return J({ user: selfUser(u), linked: true });
+  }
+
   /* --- authed --- */
   const me = await auth(req, env, url, ctx);
   if (!me) return E('לא מחובר', 401);
@@ -142,6 +252,13 @@ async function api(req, env, url, p, ctx) {
 
   /* me */
   if (p === '/api/me' && m === 'GET') return J({ user: selfUser(me) });
+  if (p === '/api/logout' && m === 'POST') {
+    const h = req.headers.get('authorization') || '';
+    const th = await sha(h.slice(7));
+    await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(th).run();
+    authCache.delete(th);
+    return J({ ok: true });
+  }
   if (p === '/api/me' && m === 'PATCH') {
     const b = await body();
     const f = {};
@@ -164,7 +281,7 @@ async function api(req, env, url, p, ctx) {
     if (b.looking !== undefined) f.looking = JSON.stringify((b.looking || []).filter(x => LOOK.includes(x)));
     if (b.lvl !== undefined && LEVELS.includes(b.lvl)) f.lvl = b.lvl;
     if (b.show_explicit !== undefined) f.show_explicit = b.show_explicit ? 1 : 0;
-    if (b.incognito !== undefined) { if (b.incognito && me.premium_until < now()) return E('אינקוגניטו זמין למנויי פרימיום'); f.incognito = b.incognito ? 1 : 0; }
+    if (b.incognito !== undefined) f.incognito = b.incognito ? 1 : 0;
     const keys = Object.keys(f);
     if (keys.length) await env.DB.prepare(`UPDATE users SET ${keys.map(k => k + '=?').join(',')} WHERE id=?`).bind(...keys.map(k => f[k]), me.id).run();
     forgetUser(me.id);
@@ -193,6 +310,7 @@ async function api(req, env, url, p, ctx) {
 
   /* verification */
   if (p === '/api/verify/start' && m === 'POST') {
+    if (needAccount(env, me)) return NEED();
     const gestures = ['✌️ שתי אצבעות', '👍 אגודל למעלה', '🤙 אגודל וזרת', '✋ כף יד פתוחה', '👌 אוקיי', '☝️ אצבע אחת'];
     const code = String(Math.floor(1000 + Math.random() * 9000));
     const g = gestures[Math.floor(Math.random() * gestures.length)];
@@ -246,6 +364,7 @@ async function api(req, env, url, p, ctx) {
     return J({ rooms: r.results.map(x => ({ ...x, online: on.rooms[x.id] || 0 })), online_total: on.users.size });
   }
   if (p === '/api/rooms' && m === 'POST') {
+    if (needAccount(env, me)) return NEED();
     const b = await body();
     const name = clean(b.name, 24);
     if (name.length < 2) return E('שם קצר מדי');
@@ -264,6 +383,7 @@ async function api(req, env, url, p, ctx) {
       return J({ room, messages: r.results.filter(x => !bl.has(x.uid)).reverse().map(roomMsg) });
     }
     if (m === 'POST') {
+      if (needAccount(env, me)) return NEED();
       const b = await body();
       const text = clean(b.text, 500);
       if (!text) return E('הודעה ריקה');
@@ -293,6 +413,7 @@ async function api(req, env, url, p, ctx) {
     });
   }
   if (p === '/api/dms' && m === 'POST') {
+    if (needAccount(env, me)) return NEED();
     const b = await body();
     const other = await env.DB.prepare('SELECT * FROM users WHERE id=? AND banned=0').bind(b.to).first();
     if (!other || other.id === me.id) return E('המשתמש לא נמצא', 404);
@@ -340,6 +461,7 @@ async function api(req, env, url, p, ctx) {
       return J({ ok: true });
     }
     if (sub === '/messages' && m === 'POST') {
+      if (needAccount(env, me)) return NEED();
       if (blocked) return E('לא ניתן לשלוח הודעה', 403);
       const b = await body();
       const msg = { id: id(), dm: dm.id, sender: me.id, kind: 'text', text: null, media: null, explicit: 0, once: 0, viewed: 0, created: now() };
@@ -396,6 +518,7 @@ async function api(req, env, url, p, ctx) {
 
   /* media */
   if (p === '/api/media' && m === 'POST') {
+    if (needAccount(env, me)) return NEED();
     const purpose = url.searchParams.get('purpose');
     if (!['chat', 'gallery', 'verify', 'avatar'].includes(purpose)) return E('purpose לא תקין');
     const mime = req.headers.get('content-type') || '';
@@ -463,6 +586,7 @@ async function api(req, env, url, p, ctx) {
     return J({ ok: true });
   }
   if (p === '/api/gallery-requests' && m === 'POST') {
+    if (needAccount(env, me)) return NEED();
     const b = await body();
     const o = await env.DB.prepare('SELECT id FROM users WHERE id=? AND banned=0').bind(b.to).first();
     if (!o || o.id === me.id) return E('לא תקין');
@@ -515,6 +639,7 @@ async function api(req, env, url, p, ctx) {
 
   /* calls */
   if ((mm = p.match(/^\/api\/call\/([\w]+)$/)) && m === 'GET') {
+    if (needAccount(env, me)) return NEED();
     return J(await callCheck(env, me, mm[1]));
   }
 
@@ -579,7 +704,6 @@ async function canSeeMedia(env, me, md) {
   return true;
 }
 export async function callCheck(env, me, otherId) {
-  if (me.premium_until < now()) return { ok: false, reason: 'premium' };
   if (me.verified !== 2) return { ok: false, reason: 'verify' };
   const o = await env.DB.prepare('SELECT * FROM users WHERE id=? AND banned=0').bind(otherId).first();
   if (!o) return { ok: false, reason: 'notfound' };
@@ -598,6 +722,7 @@ async function deleteUser(env, uid) {
     env.DB.prepare('DELETE FROM gallery_requests WHERE owner=? OR requester=?').bind(uid, uid),
     env.DB.prepare('DELETE FROM blocks WHERE user=? OR target=?').bind(uid, uid),
     env.DB.prepare('DELETE FROM media WHERE owner=?').bind(uid),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(uid),
     env.DB.prepare('DELETE FROM users WHERE id=?').bind(uid),
   ];
   for (const d of dms.results) { st.push(env.DB.prepare('DELETE FROM dm_messages WHERE dm=?').bind(d.id)); st.push(env.DB.prepare('DELETE FROM dms WHERE id=?').bind(d.id)); }
@@ -691,7 +816,7 @@ async function admin(req, env, url, p, m, me, body, ctx) {
     const f = url.searchParams.get('filter') || '';
     let where = '1=1';
     if (f === 'banned') where = 'banned=1'; else if (f === 'premium') where = `premium_until>${now()}`; else if (f === 'hidden') where = 'hidden=1'; else if (f === 'admin') where = `role='admin'`;
-    const r = await env.DB.prepare(`SELECT id,nick,emo,avatar,age,gender,area,role,verified,premium_until,banned,ban_reason,hidden,created,last_seen,
+    const r = await env.DB.prepare(`SELECT id,nick,emo,avatar,age,gender,area,role,verified,email_verified,google_sub IS NOT NULL AS google,premium_until,banned,ban_reason,hidden,created,last_seen,
       (SELECT COUNT(*) FROM reports x WHERE x.target=users.id) reports FROM users WHERE ${where} AND nick_lc LIKE ? ORDER BY last_seen DESC LIMIT 200`).bind('%' + q + '%').all();
     const on = await onlineSet(env);
     return J({ users: r.results.map(u => ({ ...u, online: on.users.has(u.id) })) });
