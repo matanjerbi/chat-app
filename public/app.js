@@ -290,12 +290,13 @@ function roomView() {
   const r = view.room || ROOMS.find(x => x.id === view.id) || { name: '…', emo: '💬', lvl: 'soft' };
   const msgs = roomMsgs[view.id];
   return `<div class="top"><button class="icon-btn" onclick="closeView()">→</button><div style="font-size:24px">${esc(r.emo)}</div><div class="grow"><div style="font-weight:700">${esc(r.name)}</div><div class="mut small">${esc(r.descr || '')}</div></div>${lvlTag(r.lvl)}</div>
-  <div class="msgs" id="msgs">${msgs ? (`<div class="m sys">כבוד הדדי. אסור לשתף פרטים מזהים של אחרים. הודעה לא נעימה? לחץ/י על הכינוי ← דיווח.</div>` + (msgs.length ? msgs.map(roomMsgHtml).join("") : '<div class="m sys">עוד אין הודעות. תהיה/י הראשון/ה 👋</div>')) : '<div class="spinner"></div>'}</div>
+  <div class="msgs" id="msgs">${msgs ? (`<div class="m sys">כבוד הדדי. אסור לשתף פרטים מזהים של אחרים. הודעה לא נעימה? לחץ/י על ההודעה ← דיווח.</div>` + (msgs.length ? msgs.map(roomMsgHtml).join("") : '<div class="m sys">עוד אין הודעות. תהיה/י הראשון/ה 👋</div>')) : '<div class="spinner"></div>'}</div>
   <div class="composer"><input id="rin" maxlength="500" placeholder="כתוב/י לחדר…" onkeydown="if(event.key==='Enter')sendRoom()"><button class="send" onclick="sendRoom()">➤</button></div>`;
 }
 function roomMsgHtml(m) {
   const mine = m.user.id === ME.id;
-  return `<div class="m room-m ${mine ? 'me' : ''}"><div class="who" style="color:${mine ? 'var(--pink2)' : color(m.user.id)}" ${mine ? '' : `onclick="openProfile('${m.user.id}')"`}>${esc(m.user.emo)} ${esc(m.user.nick)} ${vb(m.user)} <span class="mut" style="font-weight:400;font-size:11px">${hhmm(m.created)}</span></div>${esc(m.text)}</div>`;
+  const tap = mine ? `toast('זו ההודעה שלך 🙂')` : `openProfile('${m.user.id}')`;
+  return `<div class="m room-m ${mine ? 'me' : ''}" style="cursor:pointer;display:flex;gap:9px;align-items:flex-start" onclick="${tap}">${av({ id: m.user.id, emo: m.user.emo }, 34, false)}<div class="grow"><div class="who" style="color:${mine ? 'var(--pink2)' : color(m.user.id)}">${esc(m.user.nick)} ${vb(m.user)}${mine ? ' (את/ה)' : ''} <span class="mut" style="font-weight:400;font-size:11px">${hhmm(m.created)}</span></div>${esc(m.text)}</div></div>`;
 }
 async function sendRoom() {
   const i = $('#rin'); const t = i.value.trim(); if (!t) return; i.value = '';
