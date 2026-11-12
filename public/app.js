@@ -111,6 +111,11 @@ function onWS(m) {
       if (dmMsgs[m.dm]) dmMsgs[m.dm].push({ ...m.msg, mine: m.msg.sender === ME.id });
       api('/dms/' + m.dm).then(d => { dmInfo[m.dm] = d.dm; if (view && view.id === m.dm) openView(view, true); }).catch(() => {});
       break;
+    case 'dm_cleared':
+      dmMsgs[m.dm] = [];
+      { const d = DMS.find(x => x.id === m.dm); if (d) { d.last = null; d.unread = 0; } }
+      if (view && view.t === 'chat' && view.id === m.dm) openView(view, true); else if (tab === 'chats' && !view) $('#main').innerHTML = tabHtml();
+      break;
     case 'dm_deleted':
       delete dmMsgs[m.dm]; DMS = DMS.filter(x => x.id !== m.dm);
       if (view && view.id === m.dm) { toast('השיחה נמחקה'); closeView(); } else if (tab === 'chats') render();
@@ -409,7 +414,7 @@ function chatView() {
   <div class="row small" style="padding:7px 14px;background:var(--bg2);border-bottom:1px solid var(--line);cursor:pointer" onclick="levelSheet()"><span class="mut">רמת השיחה:</span>${lvlTag(info.lvl)}<span class="mut grow" style="text-align:left">שינוי ←</span></div>
   ${pend && info.pending_by !== ME.id ? `<div class="pend"><span class="grow">${esc(u.nick)} מבקש/ת לעבור לרמה <strong>${LEVELS.find(l => l[0] === pend)[2]}</strong></span><button class="btn sm" onclick="lvlAnswer(true)">אישור</button><button class="btn sec sm" onclick="lvlAnswer(false)">לא</button></div>` : ''}
   ${pend && info.pending_by === ME.id ? `<div class="pend">⏳ ממתין לאישור מעבר לרמה ${LEVELS.find(l => l[0] === pend)[2]}</div>` : ''}
-  <div class="msgs" id="msgs">${msgs.map(x => msgHtml(x).trim().replace(/^<div /, `<div data-id="${x.id}" `)).join("")}<div class="typing" id="typ" style="display:none">${esc(u.nick)} מקליד/ה…</div></div>
+  <div class="msgs" id="msgs">${!msgs.length ? `<div class="m sys empty-note">אין הודעות בשיחה. <a href="#" style="color:var(--pink2)" onclick="event.preventDefault();deleteDm()">למחוק את השיחה מהרשימה?</a></div>` : ''}${msgs.map(x => msgHtml(x).trim().replace(/^<div /, `<div data-id="${x.id}" `)).join("")}<div class="typing" id="typ" style="display:none">${esc(u.nick)} מקליד/ה…</div></div>
   ${!msgs.some(m => m.mine) ? `<div class="icebreak">${ICE.slice(0, 5).map(q => `<span class="chip" onclick="$('#cin').value=this.textContent;sendChat()">${q}</span>`).join("")}</div>` : ''}
   <div class="composer"><button class="att" ${theyWrote ? '' : 'style="opacity:.35"'} onclick="${theyWrote ? 'pickImg()' : `toast('אפשר לשלוח תמונות אחרי שהצד השני עונה לך — כדי שאף אחד לא יקבל תמונה בהפתעה')`}">📷</button><input id="cin" maxlength="2000" placeholder="הודעה…" oninput="typingPing()" onkeydown="if(event.key==='Enter')sendChat()"><button class="send" onclick="sendChat()">➤</button></div>
   ${info.catch ? `<div style="display:flex;gap:8px;padding:0 10px 10px;background:var(--bg2)"><button class="btn sec sm grow" onclick="nextCatch()">⏭️ הבא</button><button class="btn sm grow" onclick="keepCatch()">💾 שמור שיחה</button></div>` : ''}`;
@@ -484,9 +489,18 @@ function chatMenu() {
   sheet(`<h2>${esc(u.nick)}</h2>
   <div class="setrow" onclick="closeSheet();openProfile('${u.id}')">👤 <span class="grow">צפייה בפרופיל</span></div>
   <div class="setrow" onclick="closeSheet();levelSheet()">🎚️ <span class="grow">שינוי רמת השיחה</span></div>
-  <div class="setrow" onclick="deleteDm()">🗑️ <span class="grow">מחיקת השיחה (אצל שני הצדדים)</span></div>
+  ${(dmMsgs[view.id] || []).length
+    ? `<div class="setrow" onclick="clearDmAsk()">🧹 <span class="grow">מחיקת תוכן השיחה<div class="mut small">כל ההודעות והתמונות יימחקו אצל שני הצדדים</div></span></div>`
+    : `<div class="setrow" onclick="deleteDm()">🗑️ <span class="grow">מחיקת השיחה מהרשימה<div class="mut small">החלון עם ${esc(u.nick)} ייעלם</div></span></div>`}
   <div class="setrow" onclick="blockUser('${u.id}')">🚫 <span class="grow">חסימה</span></div>
   <div class="setrow" style="color:var(--bad)" onclick='reportSheet("${u.id}",${JSON.stringify({ dm: view.id, media: lastImg ? lastImg.media : undefined })})'>⚠️ <span class="grow">דיווח</span></div>`);
+}
+function clearDmAsk() {
+  sheet(`<h2>למחוק את תוכן השיחה?</h2><p class="mut" style="margin:8px 0 16px">כל ההודעות והתמונות יימחקו לצמיתות — אצלך ואצל הצד השני. החלון עצמו יישאר, ואחר כך אפשר למחוק גם אותו.</p>
+  <button class="btn" style="background:var(--bad);box-shadow:none" onclick="clearDm()">🧹 מחיקת התוכן</button><button class="btn sec" style="margin-top:8px" onclick="closeSheet()">ביטול</button>`);
+}
+async function clearDm() {
+  try { await api(`/dms/${view.id}/clear`, { method: 'POST' }); closeSheet(); dmMsgs[view.id] = []; openView(view, true); toast('תוכן השיחה נמחק 🧹'); } catch (e) { toast(e.message); }
 }
 async function deleteDm() { try { await api('/dms/' + view.id, { method: 'DELETE' }); closeSheet(); DMS = DMS.filter(d => d.id !== view.id); closeView(); toast('השיחה נמחקה'); } catch (e) { toast(e.message); } }
 function levelSheet() {

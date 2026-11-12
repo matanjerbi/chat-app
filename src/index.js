@@ -300,11 +300,19 @@ async function api(req, env, url, p, ctx) {
       const o = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(otherId).first();
       return J({ dm: { ...dm, other: publicUser(o, on.users) }, blocked });
     }
+    if (sub === '/clear' && m === 'POST') {
+      // Delete all content (both sides) but keep the conversation window
+      await clearDmContent(env, ctx, dm.id);
+      await env.DB.prepare('UPDATE dms SET pending_lvl=NULL, pending_by=NULL WHERE id=?').bind(dm.id).run();
+      ctx.waitUntil(push(env, { to: [otherId, me.id], payload: { t: 'dm_cleared', dm: dm.id } }));
+      return J({ ok: true });
+    }
     if (sub === '' && m === 'DELETE') {
-      await env.DB.batch([
-        env.DB.prepare('DELETE FROM dm_messages WHERE dm=?').bind(dm.id),
-        env.DB.prepare('DELETE FROM dms WHERE id=?').bind(dm.id),
-      ]);
+      // Removing the window itself is allowed only once it is empty (or for a throwaway catch chat)
+      const any = await env.DB.prepare('SELECT 1 FROM dm_messages WHERE dm=? LIMIT 1').bind(dm.id).first();
+      if (any && !dm.catch) return E('קודם מוחקים את תוכן השיחה, ואז אפשר למחוק את החלון');
+      await clearDmContent(env, ctx, dm.id);
+      await env.DB.prepare('DELETE FROM dms WHERE id=?').bind(dm.id).run();
       ctx.waitUntil(push(env, { to: [otherId], payload: { t: 'dm_deleted', dm: dm.id } }));
       return J({ ok: true });
     }
@@ -523,6 +531,13 @@ export async function getOrCreateDm(env, me, other, isCatch, lvl) {
   const did = id();
   await env.DB.prepare('INSERT INTO dms (id,a,b,lvl,catch,last_at,created) VALUES (?,?,?,?,?,?,?)').bind(did, a, b, start, isCatch ? 1 : 0, now(), now()).run();
   return env.DB.prepare('SELECT * FROM dms WHERE id=?').bind(did).first();
+}
+async function clearDmContent(env, ctx, dmId) {
+  const media = await env.DB.prepare('SELECT media FROM dm_messages WHERE dm=? AND media IS NOT NULL').bind(dmId).all();
+  const st = [env.DB.prepare('DELETE FROM dm_messages WHERE dm=?').bind(dmId)];
+  for (const x of media.results) st.push(env.DB.prepare('UPDATE media SET removed=1 WHERE id=?').bind(x.media));
+  await env.DB.batch(st);
+  ctx.waitUntil(Promise.all(media.results.map(x => env.MEDIA.delete('m:' + x.media))));
 }
 async function canSeeMedia(env, me, md) {
   if (md.owner === me.id || me.role === 'admin') return true;
