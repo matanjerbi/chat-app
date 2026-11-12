@@ -12,14 +12,14 @@ async function sha(t) {
 }
 const GENDERS = ['m', 'f', 'nb', 'c'];
 const LEVELS = ['soft', 'flirt', 'x'];
-const REASONS = ['minor', 'ncii', 'harass', 'unsolicited', 'scam', 'trafficking', 'fake', 'other'];
+const REASONS = ['minor', 'ncii', 'harass', 'unsolicited', 'scam', 'trafficking', 'fake', 'avatar', 'other'];
 const LOOK = ['talk', 'friends', 'date', 'flirt', 'casual', 'sexting'];
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim().slice(0, max);
 const MAX_IMG = 2 * 1024 * 1024;
 
 function publicUser(u, online) {
   return {
-    id: u.id, nick: u.nick, age: u.age, gender: u.gender, area: u.area, emo: u.emo, bio: u.bio,
+    id: u.id, nick: u.nick, age: u.age, gender: u.gender, area: u.area, emo: u.emo, avatar: u.avatar || null, bio: u.bio,
     looking: JSON.parse(u.looking || '[]'), lvl: u.lvl,
     verified: u.verified === 2, verified_gender: u.verified === 2 ? u.verified_gender : null,
     online: online ? online.has(u.id) : false, last_seen: u.last_seen,
@@ -165,6 +165,21 @@ async function api(req, env, url, p, ctx) {
     return J({ ok: true });
   }
 
+  /* profile photo */
+  if (p === '/api/me/avatar' && m === 'POST') {
+    const b = await body();
+    const md = await env.DB.prepare('SELECT * FROM media WHERE id=? AND owner=? AND purpose=? AND removed=0').bind(b.media, me.id, 'avatar').first();
+    if (!md) return E('תמונה לא נמצאה');
+    if (me.avatar && me.avatar !== md.id) { await env.DB.prepare('UPDATE media SET removed=1 WHERE id=?').bind(me.avatar).run(); ctx.waitUntil(env.MEDIA.delete('m:' + me.avatar)); }
+    await env.DB.prepare('UPDATE users SET avatar=? WHERE id=?').bind(md.id, me.id).run();
+    return J({ user: selfUser({ ...me, avatar: md.id }) });
+  }
+  if (p === '/api/me/avatar' && m === 'DELETE') {
+    if (me.avatar) { await env.DB.prepare('UPDATE media SET removed=1 WHERE id=?').bind(me.avatar).run(); ctx.waitUntil(env.MEDIA.delete('m:' + me.avatar)); }
+    await env.DB.prepare('UPDATE users SET avatar=NULL WHERE id=?').bind(me.id).run();
+    return J({ user: selfUser({ ...me, avatar: null }) });
+  }
+
   /* verification */
   if (p === '/api/verify/start' && m === 'POST') {
     const gestures = ['✌️ שתי אצבעות', '👍 אגודל למעלה', '🤙 אגודל וזרת', '✋ כף יד פתוחה', '👌 אוקיי', '☝️ אצבע אחת'];
@@ -230,7 +245,7 @@ async function api(req, env, url, p, ctx) {
     if (!room) return E('החדר לא קיים', 404);
     const bl = await blockedIds(env, me.id);
     if (m === 'GET') {
-      const r = await env.DB.prepare(`SELECT rm.id,rm.text,rm.created,u.id uid,u.nick,u.emo,u.verified,u.gender FROM room_messages rm JOIN users u ON u.id=rm.user
+      const r = await env.DB.prepare(`SELECT rm.id,rm.text,rm.created,u.id uid,u.nick,u.emo,u.avatar,u.verified,u.gender FROM room_messages rm JOIN users u ON u.id=rm.user
         WHERE rm.room=? AND u.banned=0 ORDER BY rm.created DESC LIMIT 60`).bind(room.id).all();
       return J({ room, messages: r.results.filter(x => !bl.has(x.uid)).reverse().map(roomMsg) });
     }
@@ -240,7 +255,7 @@ async function api(req, env, url, p, ctx) {
       if (!text) return E('הודעה ריקה');
       const msg = { id: id(), room: room.id, user: me.id, text, created: now() };
       await env.DB.prepare('INSERT INTO room_messages (id,room,user,text,created) VALUES (?,?,?,?,?)').bind(msg.id, msg.room, msg.user, msg.text, msg.created).run();
-      const out = roomMsg({ ...msg, uid: me.id, nick: me.nick, emo: me.emo, verified: me.verified, gender: me.gender });
+      const out = roomMsg({ ...msg, uid: me.id, nick: me.nick, emo: me.emo, avatar: me.avatar, verified: me.verified, gender: me.gender });
       ctx.waitUntil(push(env, { room: room.id, payload: { t: 'room_msg', room: room.id, msg: out } }));
       return J({ msg: out });
     }
@@ -249,7 +264,7 @@ async function api(req, env, url, p, ctx) {
   /* DMs */
   if (p === '/api/dms' && m === 'GET') {
     const on = await onlineSet(env);
-    const r = await env.DB.prepare(`SELECT d.*, u.id oid, u.nick, u.emo, u.verified, u.age, u.gender, u.banned,
+    const r = await env.DB.prepare(`SELECT d.*, u.id oid, u.nick, u.emo, u.avatar, u.verified, u.age, u.gender, u.banned,
       (SELECT COUNT(*) FROM dm_messages x WHERE x.dm=d.id AND x.sender<>? AND x.created > (CASE WHEN d.a=? THEN d.a_read ELSE d.b_read END)) unread,
       (SELECT json_object('kind',kind,'text',text,'sender',sender,'created',created) FROM dm_messages x WHERE x.dm=d.id ORDER BY created DESC LIMIT 1) last
       FROM dms d JOIN users u ON u.id = (CASE WHEN d.a=? THEN d.b ELSE d.a END)
@@ -259,7 +274,7 @@ async function api(req, env, url, p, ctx) {
       dms: r.results.filter(x => !bl.has(x.oid) && !x.banned).map(x => ({
         id: x.id, lvl: x.lvl, pending_lvl: x.pending_lvl, pending_by: x.pending_by, catch: !!x.catch, last_at: x.last_at, unread: x.unread,
         last: x.last ? JSON.parse(x.last) : null,
-        other: { id: x.oid, nick: x.nick, emo: x.emo, verified: x.verified === 2, age: x.age, gender: x.gender, online: on.users.has(x.oid) },
+        other: { id: x.oid, nick: x.nick, emo: x.emo, avatar: x.avatar, verified: x.verified === 2, age: x.age, gender: x.gender, online: on.users.has(x.oid) },
       })),
     });
   }
@@ -360,7 +375,7 @@ async function api(req, env, url, p, ctx) {
   /* media */
   if (p === '/api/media' && m === 'POST') {
     const purpose = url.searchParams.get('purpose');
-    if (!['chat', 'gallery', 'verify'].includes(purpose)) return E('purpose לא תקין');
+    if (!['chat', 'gallery', 'verify', 'avatar'].includes(purpose)) return E('purpose לא תקין');
     const mime = req.headers.get('content-type') || '';
     if (!/^image\/(jpeg|png|webp)$/.test(mime)) return E('פורמט תמונה לא נתמך');
     const buf = await req.arrayBuffer();
@@ -384,8 +399,8 @@ async function api(req, env, url, p, ctx) {
   /* gallery & grants */
   if (p === '/api/gallery' && m === 'GET') {
     const g = await env.DB.prepare('SELECT g.* FROM gallery g JOIN media m ON m.id=g.media WHERE g.owner=? AND m.removed=0 ORDER BY g.created DESC').bind(me.id).all();
-    const gr = await env.DB.prepare('SELECT u.id,u.nick,u.emo FROM grants g JOIN users u ON u.id=g.viewer WHERE g.owner=?').bind(me.id).all();
-    const rq = await env.DB.prepare('SELECT u.id,u.nick,u.emo FROM gallery_requests r JOIN users u ON u.id=r.requester WHERE r.owner=? AND u.banned=0').bind(me.id).all();
+    const gr = await env.DB.prepare('SELECT u.id,u.nick,u.emo,u.avatar FROM grants g JOIN users u ON u.id=g.viewer WHERE g.owner=?').bind(me.id).all();
+    const rq = await env.DB.prepare('SELECT u.id,u.nick,u.emo,u.avatar FROM gallery_requests r JOIN users u ON u.id=r.requester WHERE r.owner=? AND u.banned=0').bind(me.id).all();
     return J({ gallery: g.results, grants: gr.results, requests: rq.results });
   }
   if (p === '/api/gallery' && m === 'POST') {
@@ -461,11 +476,14 @@ async function api(req, env, url, p, ctx) {
     if (!REASONS.includes(b.reason)) return E('סיבה לא תקינה');
     const t = await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(b.target).first();
     if (!t || t.id === me.id) return E('לא תקין');
-    const prio = ['minor', 'ncii', 'trafficking'].includes(b.reason) ? 2 : ['harass', 'scam'].includes(b.reason) ? 1 : 0;
+    const prio = ['minor', 'ncii', 'trafficking'].includes(b.reason) ? 2 : ['harass', 'scam', 'avatar'].includes(b.reason) ? 1 : 0;
     await env.DB.prepare('INSERT INTO reports (id,reporter,target,reason,details,dm,media,priority,created) VALUES (?,?,?,?,?,?,?,?,?)')
       .bind(id(), me.id, t.id, b.reason, clean(b.details, 1000), b.dm || null, b.media || null, prio, now()).run();
     // Immediate protective actions, pending human review
-    if (b.reason === 'ncii' && b.media) await env.DB.prepare('UPDATE media SET removed=1 WHERE id=? AND owner=?').bind(b.media, t.id).run();
+    if (b.reason === 'ncii' && b.media) {
+      await env.DB.prepare('UPDATE media SET removed=1 WHERE id=? AND owner=?').bind(b.media, t.id).run();
+      await env.DB.prepare('UPDATE users SET avatar=NULL WHERE id=? AND avatar=?').bind(t.id, b.media).run();
+    }
     if (b.reason === 'minor') await env.DB.prepare('UPDATE users SET hidden=1 WHERE id=?').bind(t.id).run();
     if (b.block) await env.DB.prepare('INSERT OR IGNORE INTO blocks (user,target,created) VALUES (?,?,?)').bind(me.id, t.id, now()).run();
     return J({ ok: true });
@@ -486,7 +504,7 @@ async function api(req, env, url, p, ctx) {
 }
 
 function roomMsg(x) {
-  return { id: x.id, text: x.text, created: x.created, user: { id: x.uid, nick: x.nick, emo: x.emo, verified: x.verified === 2, gender: x.gender } };
+  return { id: x.id, text: x.text, created: x.created, user: { id: x.uid, nick: x.nick, emo: x.emo, avatar: x.avatar || null, verified: x.verified === 2, gender: x.gender } };
 }
 function dmMsg(x, uid) {
   return { id: x.id, kind: x.kind, text: x.text, media: (x.once && x.viewed && x.sender !== uid) ? null : x.media, explicit: !!x.explicit, once: !!x.once, viewed: !!x.viewed, created: x.created, mine: x.sender === uid, sender: x.sender };
@@ -509,6 +527,10 @@ export async function getOrCreateDm(env, me, other, isCatch, lvl) {
 async function canSeeMedia(env, me, md) {
   if (md.owner === me.id || me.role === 'admin') return true;
   if (md.purpose === 'verify') return false;
+  if (md.purpose === 'avatar') {
+    const blk = await env.DB.prepare('SELECT 1 FROM blocks WHERE (user=? AND target=?) OR (user=? AND target=?)').bind(me.id, md.owner, md.owner, me.id).first();
+    return !blk;
+  }
   if (md.purpose === 'gallery') {
     const g = await env.DB.prepare('SELECT * FROM gallery WHERE media=?').bind(md.id).first();
     if (!g) return false;
@@ -609,7 +631,7 @@ async function admin(req, env, url, p, m, me, body, ctx) {
     return J({ ok: true });
   }
   if (p === '/api/admin/verifications' && m === 'GET') {
-    const r = await env.DB.prepare('SELECT id,nick,emo,age,gender,area,bio,verify_code,verify_media,created FROM users WHERE verified=1 ORDER BY created ASC LIMIT 100').all();
+    const r = await env.DB.prepare('SELECT id,nick,emo,avatar,age,gender,area,bio,verify_code,verify_media,created FROM users WHERE verified=1 ORDER BY created ASC LIMIT 100').all();
     return J({ verifications: r.results.map(x => ({ ...x, verify_code: x.verify_code ? JSON.parse(x.verify_code) : null })) });
   }
   if ((mm = p.match(/^\/api\/admin\/verifications\/([\w]+)$/)) && m === 'POST') {
@@ -636,7 +658,7 @@ async function admin(req, env, url, p, m, me, body, ctx) {
     const f = url.searchParams.get('filter') || '';
     let where = '1=1';
     if (f === 'banned') where = 'banned=1'; else if (f === 'premium') where = `premium_until>${now()}`; else if (f === 'hidden') where = 'hidden=1'; else if (f === 'admin') where = `role='admin'`;
-    const r = await env.DB.prepare(`SELECT id,nick,emo,age,gender,area,role,verified,premium_until,banned,ban_reason,hidden,created,last_seen,
+    const r = await env.DB.prepare(`SELECT id,nick,emo,avatar,age,gender,area,role,verified,premium_until,banned,ban_reason,hidden,created,last_seen,
       (SELECT COUNT(*) FROM reports x WHERE x.target=users.id) reports FROM users WHERE ${where} AND nick_lc LIKE ? ORDER BY last_seen DESC LIMIT 200`).bind('%' + q + '%').all();
     const on = await onlineSet(env);
     return J({ users: r.results.map(u => ({ ...u, online: on.users.has(u.id) })) });
@@ -664,6 +686,7 @@ async function admin(req, env, url, p, m, me, body, ctx) {
   if ((mm = p.match(/^\/api\/admin\/media\/([\w]+)$/)) && m === 'POST') {
     const b = await body();
     await env.DB.prepare('UPDATE media SET removed=? WHERE id=?').bind(b.restore ? 0 : 1, mm[1]).run();
+    if (!b.restore) await env.DB.prepare('UPDATE users SET avatar=NULL WHERE avatar=?').bind(mm[1]).run();
     await log(env, me.id, b.restore ? 'media_restore' : 'media_remove', mm[1]);
     return J({ ok: true });
   }

@@ -179,3 +179,9 @@ details.card summary::before{content:"＋ ";color:var(--pink)}
 details[open].card summary::before{content:"－ "}
 details.card p{color:var(--mut);margin-top:8px;line-height:1.55;font-size:14px}
 .lfoot{text-align:center;margin-top:30px;display:flex;flex-direction:column;gap:12px}
+
+.av{overflow:visible}
+.av .avimg{position:absolute;inset:0;border-radius:50%;background-size:cover;background-position:center}
+.av .dot{z-index:2}
+.pcard .ph .phimg{position:absolute;inset:0;background-size:cover;background-position:center}
+.pcard .ph .on{z-index:2}

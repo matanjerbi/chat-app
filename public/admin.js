@@ -4,7 +4,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const GL = { m: 'גבר', f: 'אישה', nb: 'א-בינארי', c: 'זוג' };
 const AREAS = ["תל אביב והמרכז", "ירושלים", "חיפה והצפון", "השרון", "השפלה", "באר שבע והדרום", "אילת"];
-const RS = { minor: '🚨 קטין/ה', ncii: '🚨 תמונה ללא הסכמה', trafficking: '🚨 זנות/סחר', harass: 'הטרדה', unsolicited: 'תוכן לא רצוי', fake: 'מתחזה', scam: 'הונאה', other: 'אחר' };
+const RS = { avatar: 'תמונת פרופיל לא הולמת', minor: '🚨 קטין/ה', ncii: '🚨 תמונה ללא הסכמה', trafficking: '🚨 זנות/סחר', harass: 'הטרדה', unsolicited: 'תוכן לא רצוי', fake: 'מתחזה', scam: 'הונאה', other: 'אחר' };
 const VS = ['—', '⏳ ממתין', '✔ מאומת', '✖ נדחה'];
 const dt = t => t ? new Date(t).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 let tab = 'dash', STATS = {};
@@ -90,7 +90,7 @@ async function verify() {
   if (!d.verifications.length) return `<div class="empty"><div class="e">✅</div>אין אימותים ממתינים</div>`;
   return `<p class="mut small" style="margin-bottom:10px">בדוק/י: (1) אדם אמיתי ולא תמונה ממסך, (2) הקוד והתנועה מופיעים, (3) נראה/ית מעל 18 בבירור, (4) המגדר תואם להצהרה.</p>
   <div class="vgrid">${d.verifications.map(v => `<div class="vcard"><div class="ph" data-media="${v.verify_media}"></div><div class="b">
-  <div style="font-weight:700">${esc(v.emo)} ${esc(v.nick)}</div><div class="mut small">${v.age} · הצהיר/ה: <b style="color:#fff">${GL[v.gender]}</b> · ${AREAS[v.area] || ''}</div>
+  <div class="row">${v.avatar ? `<div data-media="${v.avatar}" style="width:52px;height:52px;border-radius:50%;background:#000 center/cover" title="תמונת הפרופיל"></div>` : ''}<div><div style="font-weight:700">${esc(v.emo)} ${esc(v.nick)}</div>${v.avatar ? '<div class="mut small">👈 בדוק/י שתמונת הפרופיל תואמת לסלפי</div>' : ''}</div></div><div class="mut small">${v.age} · הצהיר/ה: <b style="color:#fff">${GL[v.gender]}</b> · ${AREAS[v.area] || ''}</div>
   ${v.verify_code ? `<div class="small" style="margin:6px 0">קוד: <b style="font-size:18px;color:var(--pink2)">${v.verify_code.code}</b> · ${esc(v.verify_code.g)}</div>` : ''}
   <div class="lbl">מגדר מאומת</div><select id="vg_${v.id}" style="margin:8px 0">${Object.entries(GL).map(([k, l]) => `<option value="${k}" ${k === v.gender ? 'selected' : ''}>${l}</option>`).join('')}</select>
   <div class="acts"><button class="ok" onclick="vAct('${v.id}',true)">✔ אישור</button><button onclick="vAct('${v.id}',false)">✖ דחייה</button><button class="bad" onclick="vAct('${v.id}',false,true)">🚨 קטין/ה</button></div></div></div>`).join('')}</div>`;
@@ -125,7 +125,7 @@ async function uAct(id, action) {
 
 async function media() {
   const d = await api('/admin/media');
-  return `<p class="mut small" style="margin-bottom:10px">תמונות אחרונות (מטושטשות — לחיצה לחשיפה).</p><div class="mgrid">${d.media.map(m => `<div class="it"><div class="ph" data-media="${m.id}" onclick="this.classList.toggle('show')"></div><div class="b">${esc(m.nick)} · ${m.purpose === 'chat' ? 'צ׳אט' : 'גלריה'}<br><span class="mut">${dt(m.created)}</span><div class="acts" style="margin-top:4px"><button class="bad" onclick="mAct('${m.id}')">הסרה</button></div></div></div>`).join('') || '<span class="mut">אין תמונות</span>'}</div>`;
+  return `<p class="mut small" style="margin-bottom:10px">תמונות אחרונות (מטושטשות — לחיצה לחשיפה).</p><div class="mgrid">${d.media.map(m => `<div class="it"><div class="ph" data-media="${m.id}" onclick="this.classList.toggle('show')"></div><div class="b">${esc(m.nick)} · ${{ chat: 'צ׳אט', gallery: 'גלריה', avatar: 'פרופיל' }[m.purpose] || m.purpose}<br><span class="mut">${dt(m.created)}</span><div class="acts" style="margin-top:4px"><button class="bad" onclick="mAct('${m.id}')">הסרה</button></div></div></div>`).join('') || '<span class="mut">אין תמונות</span>'}</div>`;
 }
 async function mAct(id) { try { await api('/admin/media/' + id, { body: {} }); toast('הוסרה'); go('media', true); } catch (e) { toast(e.message); } }
 

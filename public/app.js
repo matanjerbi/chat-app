@@ -7,7 +7,7 @@ const GLBL = { m: "גבר", f: "אישה", nb: "א-בינארי", c: "זוג" };
 const COLORS = ["#ff4f8b", "#9b5cff", "#ff8a5c", "#3ddc97", "#5cc8ff", "#ffc25c", "#e85cff", "#ff5d7a"];
 const ICE = ["מה הדבר הכי ספונטני שעשית?", "איך נראה הערב המושלם שלך?", "חתול או כלב?", "מה תופס אותך במישהו?", "שיר שמכניס אותך למצב רוח?", "הדבר הכי מצחיק שקרה לך החודש?", "חופשת חלומות — איפה?"];
 const EMOJIS = ["😎", "🦊", "🐺", "🦋", "🌙", "🔥", "🍒", "🎭", "👻", "🐱", "🌶️", "💫", "🦄", "🍑", "😈", "🌹", "🎧", "🌊", "🦁", "🌸"];
-const REASONS = [["minor", "נראה/ית מתחת לגיל 18"], ["ncii", "תמונה שלי שפורסמה בלי רשותי"], ["harass", "הטרדה או איומים"], ["unsolicited", "שליחת תוכן מפורש בלי הסכמה"], ["fake", "מתחזה / פרופיל מזויף"], ["scam", "הונאה / בקשת כסף"], ["trafficking", "זנות או סחר בבני אדם"], ["other", "אחר"]];
+const REASONS = [["minor", "נראה/ית מתחת לגיל 18"], ["ncii", "תמונה שלי שפורסמה בלי רשותי"], ["avatar", "תמונת פרופיל לא הולמת / עירום"], ["harass", "הטרדה או איומים"], ["unsolicited", "שליחת תוכן מפורש בלי הסכמה"], ["fake", "מתחזה / פרופיל מזויף"], ["scam", "הונאה / בקשת כסף"], ["trafficking", "זנות או סחר בבני אדם"], ["other", "אחר"]];
 const PLANS = [{ id: "w", name: "שבועי", price: 19, per: "לשבוע" }, { id: "m", name: "חודשי", price: 49, per: "לחודש", hot: 1 }, { id: "y", name: "שנתי", price: 299, per: "לשנה", save: "חיסכון של 49%" }];
 
 /* ---------- state ---------- */
@@ -28,7 +28,7 @@ const ago = t => { const s = (Date.now() - t) / 1000; if (s < 60) return 'עכש
 const hhmm = t => new Date(t).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
 
 function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; $("#app").appendChild(d); setTimeout(() => d.remove(), 2800); }
-function av(u, size = 46, dot = true) { const c = color(u.id); return `<div class="av" style="width:${size}px;height:${size}px;font-size:${size * .48}px;background:${c}33;border:2px solid ${c}">${esc(u.emo || '🙂')}${dot && u.online ? '<i class="dot"></i>' : ''}</div>`; }
+function av(u, size = 46, dot = true) { const c = color(u.id); return `<div class="av" style="width:${size}px;height:${size}px;font-size:${size * .48}px;background:${c}33;border:2px solid ${c}">${esc(u.emo || '🙂')}${u.avatar ? `<div class="avimg" data-media="${u.avatar}"></div>` : ''}${dot && u.online ? '<i class="dot"></i>' : ''}</div>`; }
 function lvlTag(l) { return l === "x" ? '<span class="tag x">🌶️ מפורש</span>' : l === "flirt" ? '<span class="tag f">😏 פלרטוט</span>' : '<span class="tag">☕ רגוע</span>'; }
 function vb(u) { return u.verified ? '<span class="ver" title="מאומת/ת">✔</span>' : ''; }
 
@@ -273,7 +273,7 @@ function roomView() {
 function roomMsgHtml(m) {
   const mine = m.user.id === ME.id;
   const tap = mine ? `toast('זו ההודעה שלך 🙂')` : `openProfile('${m.user.id}')`;
-  return `<div class="m room-m ${mine ? 'me' : ''}" style="cursor:pointer;display:flex;gap:9px;align-items:flex-start" onclick="${tap}">${av({ id: m.user.id, emo: m.user.emo }, 34, false)}<div class="grow"><div class="who" style="color:${mine ? 'var(--pink2)' : color(m.user.id)}">${esc(m.user.nick)} ${vb(m.user)}${mine ? ' (את/ה)' : ''} <span class="mut" style="font-weight:400;font-size:11px">${hhmm(m.created)}</span></div>${esc(m.text)}</div></div>`;
+  return `<div class="m room-m ${mine ? 'me' : ''}" style="cursor:pointer;display:flex;gap:9px;align-items:flex-start" onclick="${tap}">${av({ id: m.user.id, emo: m.user.emo, avatar: m.user.avatar }, 34, false)}<div class="grow"><div class="who" style="color:${mine ? 'var(--pink2)' : color(m.user.id)}">${esc(m.user.nick)} ${vb(m.user)}${mine ? ' (את/ה)' : ''} <span class="mut" style="font-weight:400;font-size:11px">${hhmm(m.created)}</span></div>${esc(m.text)}</div></div>`;
 }
 async function sendRoom() {
   const i = $('#rin'); const t = i.value.trim(); if (!t) return; i.value = '';
@@ -300,14 +300,14 @@ function peopleTab() {
   <div class="filters"><span class="chip ${filters.online ? 'on' : ''}" onclick="filters.online=!filters.online;$('#main').innerHTML=tabHtml()">🟢 מחוברים</span><span class="chip ${filters.ver ? 'on' : ''}" onclick="filters.ver=!filters.ver;$('#main').innerHTML=tabHtml()">✔ מאומתים</span>${f("lvl", "x", "🌶️ מפורש")}${f("lvl", "flirt", "😏 פלרטוט")}${f("lvl", "soft", "☕ רגוע")}
   <select style="width:auto;padding:6px 10px;border-radius:999px;font-size:13px" onchange="filters.area=+this.value;$('#main').innerHTML=tabHtml()"><option value="-1">📍 כל הארץ</option>${AREAS.map((a, i) => `<option value="${i}" ${filters.area === i ? 'selected' : ''}>${a}</option>`).join("")}</select></div>
   <div class="grid">${list.map(u => `<div class="pcard" onclick="openProfile('${u.id}')">
-    <div class="ph" style="background:linear-gradient(160deg,${color(u.id)}55,${color(u.id)}11)">${esc(u.emo)}${u.online ? '<span class="on"><i></i>מחובר/ת</span>' : ''}</div>
+    <div class="ph" style="background:linear-gradient(160deg,${color(u.id)}55,${color(u.id)}11)">${esc(u.emo)}${u.avatar ? `<div class="phimg" data-media="${u.avatar}"></div>` : ''}${u.online ? '<span class="on"><i></i>מחובר/ת</span>' : ''}</div>
     <div class="b"><div style="font-weight:700;font-size:14px">${esc(u.nick)} ${vb(u)}</div><div class="mut small">${u.age} · ${GLBL[u.gender]} · ${AREAS[u.area] ? AREAS[u.area].split(" ").slice(0, 2).join(" ") : ''}</div><div style="margin-top:6px">${lvlTag(u.lvl)}</div></div></div>`).join("") || `<div class="empty" style="grid-column:span 2"><div class="e">🔍</div>${USERS.length ? 'אין תוצאות. נסה/י לשנות סינון.' : 'עוד אין כאן אנשים — הזמן/י חברים!'}</div>`}</div>`;
 }
 async function openProfile(id) {
   sheet('<div class="spinner"></div>');
   let d; try { d = await api('/users/' + id); } catch (e) { closeSheet(); return toast(e.message); }
   const u = d.user;
-  sheet(`<div class="row" style="gap:14px">${av(u, 72)}<div class="grow"><h2>${esc(u.nick)}</h2>
+  sheet(`<div class="row" style="gap:14px"><div ${u.avatar ? `onclick="viewImg('${u.avatar}')" style="cursor:zoom-in"` : ''}>${av(u, 72)}</div><div class="grow"><h2>${esc(u.nick)}</h2>
     ${u.verified ? `<span class="vbadge">✔ מאומת/ת · ${GLBL[u.verified_gender] || ''} אמיתי/ת</span>` : '<span class="tag">לא מאומת/ת</span>'}
     <div class="mut small" style="margin-top:4px">${u.age} · ${GLBL[u.gender]} · ${AREAS[u.area] || ''}</div><div class="small" style="margin-top:4px;color:${u.online ? 'var(--ok)' : 'var(--mut)'}">${u.online ? '● מחובר/ת עכשיו' : 'נראה/תה ' + ago(u.last_seen)}</div></div></div>
   ${u.bio ? `<p style="margin:14px 0;line-height:1.5">${esc(u.bio)}</p>` : '<div style="height:12px"></div>'}
@@ -317,7 +317,7 @@ async function openProfile(id) {
   ${d.gallery.some(g => !g.media) ? `<button class="btn sec" style="margin-top:8px" onclick="askGallery('${id}')" ${d.requested ? 'disabled' : ''}>${d.requested ? '⏳ הבקשה נשלחה' : '🔓 בקש/י גישה לגלריה הפרטית'}</button>` : ''}` : ''}
   <div class="row" style="margin-top:14px"><button class="btn" onclick="closeSheet();startDm('${id}')">💬 הודעה</button><button class="btn sec" style="width:auto;padding:14px 18px" onclick="closeSheet();startCall('${id}')">📹${isPrem() ? '' : ' 👑'}</button></div>
   <div class="row" style="margin-top:10px"><button class="btn sec sm grow" onclick="toggleGrant('${id}',${d.i_granted})">${d.i_granted ? '🔒 בטל/י גישה לגלריה שלי' : '🔑 פתח/י לו/ה את הגלריה שלי'}</button></div>
-  <div class="row" style="margin-top:12px;justify-content:center;gap:24px"><button class="mut small" onclick="blockUser('${id}')">🚫 חסימה</button><button class="small" style="color:var(--bad)" onclick="reportSheet('${id}')">⚠️ דיווח</button></div>`);
+  <div class="row" style="margin-top:12px;justify-content:center;gap:24px"><button class="mut small" onclick="blockUser('${id}')">🚫 חסימה</button><button class="small" style="color:var(--bad)" onclick='reportSheet("${id}",${JSON.stringify(u.avatar ? { media: u.avatar } : {})})'>⚠️ דיווח</button></div>`);
   hydrateImgs($('.sheet'));
 }
 async function viewImg(mid) { const u = await mediaUrl(mid); if (!u) return; sheet(`<div style="background:url('${u}') center/contain no-repeat;height:70vh;border-radius:14px"></div>`); }
@@ -604,7 +604,7 @@ function openPremium(reason) {
 function meTab() {
   const me = ME;
   const vs = me.verified ? `<span class="vbadge">✔ מאומת/ת</span>` : me.verify_state === 1 ? '<span class="tag">⏳ אימות בבדיקה</span>' : `<button class="tag" style="background:#5cc8ff22;color:#5cc8ff" onclick="verifySheet()">✔ לאימות</button>`;
-  return `<div class="card row" style="gap:14px"><div class="av" style="width:64px;height:64px;font-size:32px;background:#ff4f8b33;border:2px solid var(--pink);cursor:pointer" onclick="pickEmo()">${esc(me.emo)}</div><div class="grow"><div style="font-weight:800;font-size:19px">${esc(me.nick)}</div><div class="mut small">${me.age} · ${GLBL[me.gender]} · ${AREAS[me.area]}</div><div style="margin-top:5px">${lvlTag(me.lvl)} ${vs}</div></div><button class="btn sec sm" onclick="editMe()">עריכה</button></div>
+  return `<div class="card row" style="gap:14px"><div style="position:relative;cursor:pointer" onclick="avatarSheet()">${av(me, 64, false)}<span style="position:absolute;bottom:-2px;left:-2px;background:var(--pink);border-radius:50%;width:22px;height:22px;display:grid;place-items:center;font-size:12px">📷</span></div><div class="grow"><div style="font-weight:800;font-size:19px">${esc(me.nick)}</div><div class="mut small">${me.age} · ${GLBL[me.gender]} · ${AREAS[me.area]}</div><div style="margin-top:5px">${lvlTag(me.lvl)} ${vs}</div></div><button class="btn sec sm" onclick="editMe()">עריכה</button></div>
   ${isPrem() ? `<div class="card row" style="border-color:#ffc25c88"><span style="font-size:24px">👑</span><div class="grow small"><strong>פרימיום פעיל</strong><div class="mut">עד ${new Date(me.premium_until).toLocaleDateString("he-IL")}</div></div></div>` : `<div class="hero row" onclick="openPremium()" style="cursor:pointer"><span style="font-size:30px">👑</span><div class="grow"><strong>שדרג/י לפרימיום</strong><div class="mut small">וידאו, אינקוגניטו ועוד</div></div><span>←</span></div>`}
   ${me.role === 'admin' ? `<a href="/admin" class="card row" style="text-decoration:none;color:inherit;border-color:var(--vio)"><span style="font-size:24px">🛡️</span><div class="grow"><strong>אזור אדמין</strong></div><span>←</span></a>` : ''}
   <div class="sec-title">📷 הגלריה שלי <span class="mut small">${GAL.gallery.length}/30</span></div>
@@ -624,6 +624,26 @@ function meTab() {
   </div>`;
 }
 async function patchMe(b) { try { const d = await api('/me', { method: 'PATCH', body: b }); ME = d.user; render(); } catch (e) { toast(e.message); if (/פרימיום/.test(e.message)) openPremium(); } }
+function avatarSheet() {
+  sheet(`<h2>תמונת פרופיל</h2>
+  <div style="display:flex;justify-content:center;margin:14px 0">${av(ME, 110, false)}</div>
+  <p class="mut small" style="margin-bottom:12px;text-align:center">התמונה גלויה לכל המשתמשים — <strong>בלי עירום</strong>. לתמונות חושפניות יש את הגלריה הנעולה 🔒</p>
+  <button class="btn" id="avUp" onclick="uploadAvatar()">📷 ${ME.avatar ? 'החלפת תמונה' : 'העלאת תמונה'}</button>
+  <button class="btn sec" style="margin-top:8px" onclick="pickEmo()">😎 בחירת אימוג׳י</button>
+  ${ME.avatar ? '<button class="btn sec" style="margin-top:8px;color:var(--bad)" onclick="removeAvatar()">הסרת התמונה</button>' : ''}`);
+  hydrateImgs($('.sheet'));
+}
+async function uploadAvatar() {
+  const f = await pickFile(); if (!f) return;
+  const b = $('#avUp'); if (b) { b.disabled = true; b.textContent = 'מעלה…'; }
+  try {
+    const blob = await compress(f, 640);
+    const up = await api('/media?purpose=avatar', { method: 'POST', body: blob, headers: { 'content-type': 'image/jpeg' } });
+    const d = await api('/me/avatar', { body: { media: up.id } });
+    ME = d.user; closeSheet(); render(); toast('תמונת הפרופיל עודכנה ✨');
+  } catch (e) { toast(e.message); if (b) { b.disabled = false; b.textContent = '📷 העלאת תמונה'; } }
+}
+async function removeAvatar() { try { const d = await api('/me/avatar', { method: 'DELETE' }); ME = d.user; closeSheet(); render(); } catch (e) { toast(e.message); } }
 function pickEmo() { sheet(`<h2>אווטאר</h2><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;justify-content:center">${EMOJIS.map(e => `<button style="font-size:34px;width:58px;height:58px;border-radius:16px;background:var(--card)" onclick="closeSheet();patchMe({emo:'${e}'})">${e}</button>`).join("")}</div>`); }
 function editMe() {
   sheet(`<h2>עריכת פרופיל</h2>
@@ -703,3 +723,5 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && ME
 setInterval(() => { if (ME && tab === 'rooms' && !view) loadRooms().then(() => { if (tab === 'rooms' && !view) $('#main').innerHTML = tabHtml(); }).catch(() => {}); }, 30000);
 
 boot();
+// load any private image (avatars, gallery, chat) as soon as it appears on screen
+new MutationObserver(() => hydrateImgs()).observe(document.getElementById('app'), { childList: true, subtree: true });
