@@ -267,7 +267,7 @@ function roomView() {
   const r = view.room || ROOMS.find(x => x.id === view.id) || { name: '…', emo: '💬', lvl: 'soft' };
   const msgs = roomMsgs[view.id];
   return `<div class="top"><button class="icon-btn" onclick="closeView()">→</button><div style="font-size:24px">${esc(r.emo)}</div><div class="grow"><div style="font-weight:700">${esc(r.name)}</div><div class="mut small">${esc(r.descr || '')}</div></div>${lvlTag(r.lvl)}</div>
-  <div class="msgs" id="msgs">${msgs ? (`<div class="m sys">כבוד הדדי. אסור לשתף פרטים מזהים של אחרים. הודעה לא נעימה? לחץ/י על ההודעה ← דיווח.</div>` + (msgs.length ? msgs.map(roomMsgHtml).join("") : '<div class="m sys">עוד אין הודעות. תהיה/י הראשון/ה 👋</div>')) : '<div class="spinner"></div>'}</div>
+  <div class="msgs" id="msgs">${msgs ? (`<div class="m sys">כבוד הדדי. אסור לשתף פרטים מזהים של אחרים. הודעה לא נעימה? לחץ/י על ההודעה ← דיווח.</div>` + (msgs.length ? msgs.map(x => roomMsgHtml(x).trim().replace(/^<div /, `<div data-id="${x.id}" `)).join("") : '<div class="m sys empty-note">עוד אין הודעות. תהיה/י הראשון/ה 👋</div>')) : '<div class="spinner"></div>'}</div>
   <div class="composer"><input id="rin" maxlength="500" placeholder="כתוב/י לחדר…" onkeydown="if(event.key==='Enter')sendRoom()"><button class="send" onclick="sendRoom()">➤</button></div>`;
 }
 function roomMsgHtml(m) {
@@ -280,7 +280,27 @@ async function sendRoom() {
   try { const d = await api(`/rooms/${view.id}/messages`, { body: { text: t } }); if (!roomMsgs[view.id].some(x => x.id === d.msg.id)) roomMsgs[view.id].push(d.msg); refreshRoom(); }
   catch (e) { toast(e.message); i.value = t; }
 }
-function refreshRoom() { const m = $("#msgs"); if (!m || !view || view.t !== 'room') return; const atBottom = m.scrollHeight - m.scrollTop - m.clientHeight < 120; m.innerHTML = roomView().match(/<div class="msgs" id="msgs">([\s\S]*)<\/div>\s*<div class="composer">/)[1]; if (atBottom) m.scrollTop = m.scrollHeight; }
+/* Update a message list in place: append only new messages (animated), replace only changed ones.
+   Rebuilding the whole list re-ran the pop animation on every bubble, which made the chat "jump". */
+function syncList(box, items, fn, anchor) {
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 150;
+  const have = new Map([...box.querySelectorAll(':scope > [data-id]')].map(e => [e.dataset.id, e]));
+  const want = new Set(items.map(x => x.id));
+  have.forEach((e, id) => { if (!want.has(id)) e.remove(); });
+  let lastMine = false, added = false;
+  for (const it of items) {
+    const h = fn(it).trim().replace(/^<div /, `<div data-id="${it.id}" `);
+    const cur = have.get(it.id);
+    if (cur && cur._h === h) continue;
+    const t = document.createElement('template'); t.innerHTML = h;
+    const el = t.content.firstElementChild; el._h = h;
+    if (cur) cur.replaceWith(el);
+    else { el.classList.add('new'); anchor && anchor.parentNode === box ? box.insertBefore(el, anchor) : box.appendChild(el); added = true; lastMine = !!(it.mine || (it.user && ME && it.user.id === ME.id)); }
+  }
+  if (added) { const n = box.querySelector('.empty-note'); n && n.remove(); }
+  if (added && (atBottom || lastMine)) box.scrollTop = box.scrollHeight;
+}
+function refreshRoom() { const m = $("#msgs"); if (!m || !view || view.t !== 'room' || !roomMsgs[view.id]) return; syncList(m, roomMsgs[view.id], roomMsgHtml); }
 function newRoomSheet() {
   sheet(`<h2>חדר חדש</h2><p class="mut small" style="margin-bottom:12px">כל נושא שעולה לך בראש</p>
   <input id="nrName" placeholder="שם החדר" maxlength="24"><input id="nrDesc" placeholder="תיאור קצר (לא חובה)" maxlength="80" style="margin-top:8px">
@@ -389,7 +409,7 @@ function chatView() {
   <div class="row small" style="padding:7px 14px;background:var(--bg2);border-bottom:1px solid var(--line);cursor:pointer" onclick="levelSheet()"><span class="mut">רמת השיחה:</span>${lvlTag(info.lvl)}<span class="mut grow" style="text-align:left">שינוי ←</span></div>
   ${pend && info.pending_by !== ME.id ? `<div class="pend"><span class="grow">${esc(u.nick)} מבקש/ת לעבור לרמה <strong>${LEVELS.find(l => l[0] === pend)[2]}</strong></span><button class="btn sm" onclick="lvlAnswer(true)">אישור</button><button class="btn sec sm" onclick="lvlAnswer(false)">לא</button></div>` : ''}
   ${pend && info.pending_by === ME.id ? `<div class="pend">⏳ ממתין לאישור מעבר לרמה ${LEVELS.find(l => l[0] === pend)[2]}</div>` : ''}
-  <div class="msgs" id="msgs">${msgs.map(msgHtml).join("")}<div class="typing" id="typ" style="display:none">${esc(u.nick)} מקליד/ה…</div></div>
+  <div class="msgs" id="msgs">${msgs.map(x => msgHtml(x).trim().replace(/^<div /, `<div data-id="${x.id}" `)).join("")}<div class="typing" id="typ" style="display:none">${esc(u.nick)} מקליד/ה…</div></div>
   ${!msgs.some(m => m.mine) ? `<div class="icebreak">${ICE.slice(0, 5).map(q => `<span class="chip" onclick="$('#cin').value=this.textContent;sendChat()">${q}</span>`).join("")}</div>` : ''}
   <div class="composer"><button class="att" ${theyWrote ? '' : 'style="opacity:.35"'} onclick="${theyWrote ? 'pickImg()' : `toast('אפשר לשלוח תמונות אחרי שהצד השני עונה לך — כדי שאף אחד לא יקבל תמונה בהפתעה')`}">📷</button><input id="cin" maxlength="2000" placeholder="הודעה…" oninput="typingPing()" onkeydown="if(event.key==='Enter')sendChat()"><button class="send" onclick="sendChat()">➤</button></div>
   ${info.catch ? `<div style="display:flex;gap:8px;padding:0 10px 10px;background:var(--bg2)"><button class="btn sec sm grow" onclick="nextCatch()">⏭️ הבא</button><button class="btn sm grow" onclick="keepCatch()">💾 שמור שיחה</button></div>` : ''}`;
@@ -429,9 +449,7 @@ function openImg(mid) {
 function refreshChat() {
   const box = $("#msgs"); if (!box || !view || view.t !== 'chat') return;
   const msgs = dmMsgs[view.id] || [];
-  const typ = $('#typ'); const typHtml = typ ? typ.outerHTML : '';
-  box.innerHTML = msgs.map(msgHtml).join("") + typHtml;
-  box.scrollTop = box.scrollHeight; hydrateImgs(box);
+  syncList(box, msgs, msgHtml, $('#typ'));
   const theyWrote = msgs.some(m => !m.mine && m.kind !== 'sys');
   const att = document.querySelector('.composer .att'); if (att && theyWrote && att.style.opacity) openView(view, true);
 }
@@ -710,7 +728,11 @@ function openView(v, silent) {
   d.innerHTML = `<div class="chatwrap">${v.t === 'room' ? roomView() : chatView()}</div>`;
   $("#app").appendChild(d);
   const inp = $('#cin, #rin'); if (inp && keepInput) inp.value = keepInput;
-  const m = $("#msgs"); if (m) { m.scrollTop = m.scrollHeight; hydrateImgs(m); }
+  const m = $("#msgs"); if (m) {
+    const list = v.t === 'room' ? roomMsgs[v.id] : dmMsgs[v.id], fn = v.t === 'room' ? roomMsgHtml : msgHtml;
+    if (list) m.querySelectorAll(':scope > [data-id]').forEach(e => { const it = list.find(x => x.id === e.dataset.id); if (it) e._h = fn(it).trim().replace(/^<div /, `<div data-id="${it.id}" `); });
+    m.scrollTop = m.scrollHeight; hydrateImgs(m);
+  }
 }
 function closeView() {
   if (view && view.t === 'room') wsSend({ t: 'leave', room: view.id });
