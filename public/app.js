@@ -739,6 +739,7 @@ function openView(v, silent) {
   const old = $("#full"); const keepInput = old && $('#cin, #rin') ? $('#cin, #rin').value : '';
   old && old.remove();
   const d = document.createElement("div"); d.className = "full"; d.id = "full"; if (silent) d.style.animation = "none";
+  if (!silent && !histView) { history.pushState({ klik: 'view' }, ''); histView = true; }
   d.innerHTML = `<div class="chatwrap">${v.t === 'room' ? roomView() : chatView()}</div>`;
   $("#app").appendChild(d);
   const inp = $('#cin, #rin'); if (inp && keepInput) inp.value = keepInput;
@@ -748,13 +749,35 @@ function openView(v, silent) {
     m.scrollTop = m.scrollHeight; hydrateImgs(m);
   }
 }
-function closeView() {
-  if (view && view.t === 'room') wsSend({ t: 'leave', room: view.id });
-  view = null; $("#full") && $("#full").remove(); go(tab);
+/* Navigation: every open window has an ✕, and the phone's back button closes the top-most window. */
+let histSheet = false, histView = false, ignorePop = 0;
+let pendingBack = 0;
+function histBack() { // batch several closes (e.g. sheet + view) into one history jump
+  if (pendingBack++ === 0) setTimeout(() => { const n = pendingBack; pendingBack = 0; ignorePop++; history.go(-n); }, 0);
 }
-function sheet(h) { closeSheet(); const s = document.createElement("div"); s.className = "scrim"; s.onclick = e => { if (e.target === s) closeSheet(); }; s.innerHTML = `<div class="sheet"><div class="grab"></div>${h}</div>`; $("#app").appendChild(s); }
-function closeSheet() { document.querySelectorAll(".scrim").forEach(s => s.remove()); }
-window.addEventListener('popstate', () => { if (document.querySelector('.scrim')) closeSheet(); else if (view) closeView(); });
+function closeView(fromPop) {
+  if (view && view.t === 'room') wsSend({ t: 'leave', room: view.id });
+  view = null; $("#full") && $("#full").remove();
+  if (histView && !fromPop) { histView = false; histBack(); } else histView = false;
+  go(tab);
+}
+function sheet(h) {
+  document.querySelectorAll(".scrim").forEach(s => s.remove());
+  const s = document.createElement("div"); s.className = "scrim"; s.onclick = e => { if (e.target === s) closeSheet(); };
+  s.innerHTML = `<div class="sheet"><button class="sheet-x" onclick="closeSheet()" aria-label="סגירה">✕</button><div class="grab"></div>${h}</div>`;
+  $("#app").appendChild(s);
+  if (!histSheet) { history.pushState({ klik: 'sheet' }, ''); histSheet = true; }
+}
+function closeSheet(fromPop) {
+  document.querySelectorAll(".scrim").forEach(s => s.remove());
+  if (histSheet && !fromPop) { histSheet = false; histBack(); } else histSheet = false;
+}
+window.addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop--; return; }
+  if (histSheet) return closeSheet(true);
+  if (histView && view) return closeView(true);
+  if (call) return; // never drop a live call on back
+});
 document.addEventListener('visibilitychange', () => { if (!document.hidden && ME) { loadDms().then(() => { if (tab === 'chats' && !view) $('#main').innerHTML = tabHtml(); }).catch(() => {}); if (!wsOk) connectWS(); } });
 setInterval(() => { if (ME && tab === 'rooms' && !view) loadRooms().then(() => { if (tab === 'rooms' && !view) $('#main').innerHTML = tabHtml(); }).catch(() => {}); }, 30000);
 

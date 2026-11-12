@@ -145,7 +145,7 @@ async function log() {
 }
 
 /* modal + prompt (no native dialogs) */
-function modal(h) { closeModal(); const s = document.createElement('div'); s.className = 'scrim'; s.style.position = 'fixed'; s.style.alignItems = 'center'; s.style.justifyContent = 'center'; s.onclick = e => { if (e.target === s) closeModal(); }; s.innerHTML = `<div class="sheet" style="max-width:760px;border-radius:22px;max-height:90vh">${h}</div>`; document.body.appendChild(s); }
+function modal(h) { closeModal(); const s = document.createElement('div'); s.className = 'scrim'; s.style.position = 'fixed'; s.style.alignItems = 'center'; s.style.justifyContent = 'center'; s.onclick = e => { if (e.target === s) closeModal(); }; s.innerHTML = `<div class="sheet" style="max-width:760px;border-radius:22px;max-height:90vh"><button class="sheet-x" onclick="closeModal()" aria-label="סגירה">✕</button>${h}</div>`; document.body.appendChild(s); }
 function closeModal() { document.querySelectorAll('.scrim').forEach(s => s.remove()); }
 function ask(q, def) {
   return new Promise(res => {

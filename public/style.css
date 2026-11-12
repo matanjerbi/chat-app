@@ -186,3 +186,7 @@ details.card p{color:var(--mut);margin-top:8px;line-height:1.55;font-size:14px}
 .av .dot{z-index:2}
 .pcard .ph .phimg{position:absolute;inset:0;background-size:cover;background-position:center}
 .pcard .ph .on{z-index:2}
+
+.sheet{position:relative}
+.sheet-x{position:absolute;top:12px;left:12px;width:34px;height:34px;border-radius:50%;background:var(--card2);border:1px solid var(--line);color:var(--txt);font-size:16px;display:grid;place-items:center;z-index:3}
+.sheet-x:active{background:var(--line)}
