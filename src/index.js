@@ -188,6 +188,7 @@ async function api(req, env, url, p, ctx) {
     const existing = await env.DB.prepare('SELECT * FROM users WHERE google_sub=?').bind(g.sub).first();
     if (existing) {
       if (existing.banned) return J({ error: 'החשבון הושעה', banned: true, reason: existing.ban_reason }, 403);
+      if (cur && cur.id !== existing.id && !isFull(cur)) ctx.waitUntil(deleteUser(env, cur.id));
       return J({ token: await newSession(env, existing.id), user: selfUser(existing), switched: !cur || cur.id !== existing.id });
     }
     if (!cur) return J({ error: 'אין חשבון שמקושר ל-Google הזה. היכנס/י קודם עם כינוי, ואז צור/י חשבון.', no_account: true }, 404);
@@ -230,6 +231,7 @@ async function api(req, env, url, p, ctx) {
     const existing = await env.DB.prepare('SELECT * FROM users WHERE email=? AND email_verified=1').bind(email).first();
     if (existing) {
       if (existing.banned) return J({ error: 'החשבון הושעה', banned: true, reason: existing.ban_reason }, 403);
+      if (cur && cur.id !== existing.id && !isFull(cur)) ctx.waitUntil(deleteUser(env, cur.id));
       return J({ token: await newSession(env, existing.id), user: selfUser(existing), switched: !cur || cur.id !== existing.id });
     }
     if (!cur) return J({ error: 'אין חשבון עם המייל הזה. היכנס/י קודם עם כינוי, ואז צור/י חשבון.', no_account: true }, 404);
@@ -715,6 +717,7 @@ export async function callCheck(env, me, otherId) {
   return { ok: true, other: { id: o.id, nick: o.nick, emo: o.emo } };
 }
 async function deleteUser(env, uid) {
+  forgetUser(uid);
   const media = await env.DB.prepare('SELECT id FROM media WHERE owner=?').bind(uid).all();
   const dms = await env.DB.prepare('SELECT id FROM dms WHERE a=? OR b=?').bind(uid, uid).all();
   const st = [

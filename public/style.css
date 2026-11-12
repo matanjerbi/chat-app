@@ -190,3 +190,7 @@ details.card p{color:var(--mut);margin-top:8px;line-height:1.55;font-size:14px}
 .sheet{position:relative}
 .sheet-x{position:absolute;top:12px;left:12px;width:34px;height:34px;border-radius:50%;background:var(--card2);border:1px solid var(--line);color:var(--txt);font-size:16px;display:grid;place-items:center;z-index:3}
 .sheet-x:active{background:var(--line)}
+
+.returning{text-align:center;margin-bottom:6px}
+.ordiv{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:13px;margin:12px 0}
+.ordiv::before,.ordiv::after{content:"";flex:1;height:1px;background:var(--line)}

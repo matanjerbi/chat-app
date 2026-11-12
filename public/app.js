@@ -212,11 +212,16 @@ function bindLanding() {
     try {
       const d = await api('/register', { body: { nick, age, gender: g, looking: ['talk', 'flirt'], lvl: 'flirt', emo: RANDOM_EMO(), agree: true } });
       TOKEN = d.token; try { localStorage.setItem('blush_token', TOKEN); } catch (x) {}
-      ME = d.user; await boot();
+      ME = d.user;
+      if (pendingGoogle) { // signed in with Google first, no account yet -> link it right away
+        try { const l = await api('/auth/google', { body: { credential: pendingGoogle } }); if (l.user) ME = l.user; } catch (x) {}
+        pendingGoogle = null;
+      }
+      await boot();
       toast('ברוך/ה הבא/ה 👋');
     } catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = 'כניסה ⚡'; }
   };
-  $('#jHasKey').onclick = e => { e.preventDefault(); accountSheet('login'); };
+  setupLandingLogin();
   fetch('/api/public/stats').then(r => r.json()).then(d => {
     const o = $('#lOnline'); if (o) o.textContent = d.online >= 5 ? `● ${d.online} מחוברים עכשיו` : '● פעיל עכשיו';
     const box = $('#lRooms'); if (box && d.rooms) box.innerHTML = d.rooms.map(r => `<div class="lroom">${esc(r.emo)} ${esc(r.name)}${r.online >= 3 ? `<i>● ${r.online}</i>` : ''}</div>`).join('');
@@ -721,6 +726,35 @@ async function blocksSheet() {
   sheet('<h2>חסומים</h2>' + (d.blocks.length ? d.blocks.map(u => `<div class="setrow"><span class="grow">${esc(u.emo)} ${esc(u.nick)}</span><button class="btn sec sm" onclick="unblock('${u.id}')">שחרור</button></div>`).join('') : '<p class="mut">אין משתמשים חסומים</p>'));
 }
 async function unblock(id) { await api('/blocks/' + id, { method: 'DELETE' }).catch(() => {}); blocksSheet(); }
+/* ---------- returning users on the landing page ---------- */
+let pendingGoogle = null;
+async function setupLandingLogin() {
+  await configReady;
+  const box = $('#lReturn'); if (!box) return;
+  if (!CONFIG.google_client_id && !CONFIG.email_login) { box.style.display = 'none'; const o = document.querySelector('.ordiv'); if (o) o.style.display = 'none'; return; }
+  if (CONFIG.email_login) { const o = $('#lOther'); o.style.display = 'inline-block'; o.onclick = e => { e.preventDefault(); accountSheet('login'); }; }
+  if (!CONFIG.google_client_id) { $('#lGoogle').style.display = 'none'; return; }
+  try {
+    await loadGis();
+    google.accounts.id.initialize({ client_id: CONFIG.google_client_id, callback: landingGoogle });
+    const el = $('#lGoogle'); google.accounts.id.renderButton(el, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', locale: 'he', width: Math.min(320, el.clientWidth || 300) });
+  } catch (e) { box.style.display = 'none'; const o = document.querySelector('.ordiv'); if (o) o.style.display = 'none'; }
+}
+async function landingGoogle(r) {
+  try {
+    const d = await api('/auth/google', { body: { credential: r.credential } });
+    if (d.token) { TOKEN = d.token; try { localStorage.setItem('blush_token', TOKEN); } catch (e) {} ME = d.user; await boot(); toast(`שלום ${d.user.nick} 👋 חזרת לחשבון שלך`); }
+  } catch (e) {
+    if (/אין חשבון/.test(e.message)) {
+      // new person: keep the Google sign-in and attach it as soon as they pick a nickname
+      pendingGoogle = r.credential;
+      const box = $('#lReturn'); if (box) box.innerHTML = '<div class="small">✔ מחובר/ת עם Google. עכשיו רק לבחור כינוי 👇</div>';
+      const o = document.querySelector('.ordiv'); if (o) o.style.display = 'none';
+      $('#jNick') && $('#jNick').focus();
+    } else toast(e.message);
+  }
+}
+
 /* ---------- permanent account (Google / email code) ---------- */
 // mode: 'create' (guest -> permanent, default) | 'login' (from the landing page / another device)
 async function accountSheet(mode = 'create') {
