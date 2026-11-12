@@ -64,7 +64,18 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
-    if (!p.startsWith('/api/')) return env.ASSETS.fetch(req);
+    if (p === '/robots.txt') return new Response(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nSitemap: ${url.origin}/sitemap.xml\n`, { headers: { 'content-type': 'text/plain' } });
+    if (p === '/sitemap.xml') return new Response(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${url.origin}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url></urlset>`, { headers: { 'content-type': 'application/xml' } });
+    if (!p.startsWith('/api/')) {
+      const res = await env.ASSETS.fetch(req);
+      if (p === '/' || p === '/index.html') {
+        // absolute canonical / og:url for search engines, whatever domain serves the site
+        const html = (await res.text()).replace('<link rel="canonical" href="/">', `<link rel="canonical" href="${url.origin}/"><meta property="og:url" content="${url.origin}/">`).replace('content="/icons/icon-512.png"', `content="${url.origin}/icons/icon-512.png"`);
+        return new Response(html, { status: res.status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+      }
+      if (p.startsWith('/admin')) { const r2 = new Response(res.body, res); r2.headers.set('x-robots-tag', 'noindex'); return r2; }
+      return res;
+    }
     try {
       return await api(req, env, url, p, ctx);
     } catch (e) {
@@ -80,6 +91,11 @@ async function api(req, env, url, p, ctx) {
 
   /* --- public --- */
   if (p === '/api/health') return J({ ok: true });
+  if (p === '/api/public/stats') {
+    const on = await onlineSet(env);
+    const r = await env.DB.prepare('SELECT id,name,emo,lvl FROM rooms WHERE hidden=0 AND official=1 ORDER BY created LIMIT 12').all();
+    return new Response(JSON.stringify({ online: on.users.size, rooms: r.results.map(x => ({ name: x.name, emo: x.emo, lvl: x.lvl, online: on.rooms[x.id] || 0 })) }), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=20' } });
+  }
 
   if (p === '/api/register' && m === 'POST') {
     const b = await body();

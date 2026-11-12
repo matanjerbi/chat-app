@@ -4,20 +4,112 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#120a1c">
-<meta name="robots" content="noindex">
-<meta name="description" content="צ'אט והיכרויות אנונימיים למבוגרים 18+">
-<title>בלאש · צ'אט והיכרויות 18+</title>
+<title>קליק · צ'אט חינם והיכרויות אנונימי | בלי הרשמה ובלי כרטיס אשראי</title>
+<meta name="description" content="קליק — צ'אט ישראלי חינמי לגמרי: חדרי צ'אט, שיחות פרטיות, תמונות והיכרויות אנונימיות לבני 18+. נכנסים בשנייה עם כינוי בלבד — בלי מייל, בלי טלפון ובלי כרטיס אשראי.">
+<meta name="keywords" content="צ'אט, צאט, צ'אט חינם, צ'אט אנונימי, צ'אט ישראלי, חדרי צ'אט, היכרויות, צ'אט היכרויות, צ'אט פלרטוט, צ'אט 18">
+<link rel="canonical" href="/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="he_IL">
+<meta property="og:site_name" content="קליק">
+<meta property="og:title" content="קליק · צ'אט חינם והיכרויות אנונימי">
+<meta property="og:description" content="מדברים, מכירים, מפלרטטים — חינם ואנונימי. בלי מייל, בלי טלפון, בלי כרטיס אשראי.">
+<meta property="og:image" content="/icons/icon-512.png">
+<meta name="twitter:card" content="summary">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="קליק">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+ {"@type":"WebSite","name":"קליק","alternateName":"Klik Chat","inLanguage":"he","description":"צ'אט חינם והיכרויות אנונימי לבני 18+"},
+ {"@type":"FAQPage","mainEntity":[
+  {"@type":"Question","name":"האם הצ'אט באמת חינם?","acceptedAnswer":{"@type":"Answer","text":"כן. הודעות, חדרים, שיחות פרטיות, תמונות וגלריה — הכול חינם לתמיד, בלי הגבלה. רק שיחות וידאו הן חלק ממנוי פרימיום אופציונלי."}},
+  {"@type":"Question","name":"צריך להירשם?","acceptedAnswer":{"@type":"Answer","text":"רק לבחור כינוי, גיל ומגדר. בלי מייל, בלי טלפון ובלי כרטיס אשראי. לוקח פחות מעשר שניות."}},
+  {"@type":"Question","name":"הצ'אט אנונימי?","acceptedAnswer":{"@type":"Answer","text":"כן. אף אחד לא רואה את השם האמיתי, הטלפון או המיקום שלך. מיקום ומטא-דאטה נמחקים אוטומטית מכל תמונה."}},
+  {"@type":"Question","name":"למי מיועד הצ'אט?","acceptedAnswer":{"@type":"Answer","text":"לבני 18 ומעלה בלבד. אפשר לדבר על הכול — משיחה רגילה ועד פלרטוט ותוכן למבוגרים, כשהכול בהסכמה הדדית."}}
+ ]}
+]}
+</script>
 </head>
 <body>
-<div id="app"><div class="center"><div class="spinner"></div></div></div>
+<div id="app">
+<div class="landing" id="landing">
+  <header class="lhead"><div class="logo">קליק</div><span class="tag g" id="lOnline">● פעיל עכשיו</span></header>
+
+  <section class="lhero">
+    <div class="free-badge">100% חינם</div>
+    <h1>הצ'אט שבאמת<br><span class="grad">חינם וחופשי.</span></h1>
+    <p class="lsub">מדברים, מכירים, מפלרטטים — אנונימי לגמרי.<br>בלי מייל, בלי טלפון, <strong>בלי כרטיס אשראי.</strong></p>
+
+    <form class="join card" id="joinForm" onsubmit="return false">
+      <div class="join-title">נכנסים בשנייה 👇</div>
+      <input id="jNick" maxlength="16" placeholder="בחר/י כינוי" autocomplete="off" required>
+      <div class="row">
+        <input id="jAge" type="number" inputmode="numeric" min="18" max="99" placeholder="גיל" required style="max-width:96px">
+        <div class="gsel" id="jG">
+          <button type="button" data-g="m" class="on">גבר</button><button type="button" data-g="f">אישה</button><button type="button" data-g="c">זוג</button><button type="button" data-g="nb">אחר</button>
+        </div>
+      </div>
+      <label class="agree"><input type="checkbox" id="jAgree"> אני מעל גיל 18 ומסכים/ה <a href="#rules" onclick="document.getElementById('rules').scrollIntoView({behavior:'smooth'});return false">לכללים</a></label>
+      <div class="err" id="jErr"></div>
+      <button class="btn big" id="jGo" type="submit">כניסה לצ'אט — חינם ⚡</button>
+      <div class="mut small" style="text-align:center">כבר יש לך חשבון? <a href="#" id="jHasKey">כניסה עם מפתח</a></div>
+    </form>
+
+    <div class="freelist">
+      <span>✅ הודעות ללא הגבלה</span><span>✅ חדרי צ'אט</span><span>✅ שיחות פרטיות</span><span>✅ שליחת תמונות</span><span>✅ בלי פרסומות קופצות</span>
+    </div>
+  </section>
+
+  <section class="lsec">
+    <h2>מה קורה עכשיו בחדרים</h2>
+    <div class="lrooms" id="lRooms">
+      <div class="lroom">🛋️ הסלון</div><div class="lroom">😏 פלרטוטים</div><div class="lroom">🌶️ לילה חם 18+</div><div class="lroom">🏙️ תל אביב והמרכז</div><div class="lroom">🌈 קשת</div><div class="lroom">💞 זוגות ופתוחים</div><div class="lroom">🕍 ירושלים</div><div class="lroom">🌊 חיפה והצפון</div><div class="lroom">🏜️ באר שבע והדרום</div><div class="lroom">🌙 לא נרדמים</div>
+    </div>
+  </section>
+
+  <section class="lsec">
+    <h2>למה קליק?</h2>
+    <div class="lgrid">
+      <div class="card"><b>💸</b><h3>חינם. באמת.</h3><p>אין "שלח הודעה ב-29.90". כל ההודעות, החדרים והתמונות חינם לתמיד.</p></div>
+      <div class="card"><b>🕶️</b><h3>אנונימי</h3><p>רק כינוי. בלי פרטים אישיים. מיקום ומטא-דאטה נמחקים מכל תמונה.</p></div>
+      <div class="card"><b>✔</b><h3>בלי מתחזים</h3><p>אימות סלפי מוכיח שמי שמולך אמיתי — הגיל והמגדר נבדקים ידנית.</p></div>
+      <div class="card"><b>⚡</b><h3>קאץ' מהיר</h3><p>שיחה אקראית אחד-על-אחד עם מי שמחפש בדיוק מה שאת/ה מחפש/ת.</p></div>
+      <div class="card"><b>🤝</b><h3>הסכמה קודם</h3><p>תוכן מפורש רק כששני הצדדים בחרו. תמונות כאלה מגיעות מטושטשות.</p></div>
+      <div class="card"><b>📲</b><h3>כמו אפליקציה</h3><p>מתקינים על המסך הראשי בלחיצה — בלי חנות אפליקציות.</p></div>
+    </div>
+  </section>
+
+  <section class="lsec">
+    <h2>שאלות נפוצות</h2>
+    <details class="card" open><summary>האם הצ'אט באמת חינם?</summary><p>כן. הודעות, חדרים, שיחות פרטיות, תמונות וגלריה — הכול חינם לתמיד ובלי הגבלה. הדבר היחיד בתשלום הוא שיחות וידאו, במנוי פרימיום אופציונלי. אף אחד לא חייב.</p></details>
+    <details class="card"><summary>צריך להירשם?</summary><p>רק כינוי, גיל ומגדר. בלי מייל, בלי טלפון, בלי כרטיס אשראי. פחות מעשר שניות.</p></details>
+    <details class="card"><summary>זה אנונימי?</summary><p>לגמרי. אף אחד לא רואה שם אמיתי, טלפון או מיקום. מוחקים שיחה — היא נמחקת אצל שני הצדדים.</p></details>
+    <details class="card"><summary>על מה אפשר לדבר?</summary><p>על הכול — משיחה רגילה, דרך פלרטוט ועד תוכן למבוגרים. כל אחד בוחר את הרמה שלו, ותוכן מפורש קורה רק בהסכמה הדדית.</p></details>
+  </section>
+
+  <section class="lsec" id="rules">
+    <h2>הכללים (קצר)</h2>
+    <div class="card small" style="line-height:1.9">
+      🔞 18+ בלבד. משתמש שנראה קטין מורחק מיד.<br>
+      🤝 כבוד והסכמה. "לא" זה לא.<br>
+      📷 אסור לפרסם תמונה של אדם אחר בלי רשותו — הרחקה לצמיתות ודיווח.<br>
+      💸 אסור לבקש כסף, לפרסם שירותי מין או להונות.<br>
+      🚨 כל הפרה — דיווח בלחיצה, וצוות הבטיחות מטפל.
+    </div>
+  </section>
+
+  <footer class="lfoot">
+    <button class="btn" onclick="document.getElementById('jNick').focus();window.scrollTo({top:0,behavior:'smooth'})">כניסה לצ'אט — חינם ⚡</button>
+    <p class="mut small">קליק · צ'אט והיכרויות לבני 18+ · © 2026</p>
+  </footer>
+</div>
+</div>
 <input type="file" id="filePick" accept="image/*" hidden>
 <input type="file" id="camPick" accept="image/*" capture="user" hidden>
 <script src="/app.js"></script>

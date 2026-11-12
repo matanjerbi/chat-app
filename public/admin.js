@@ -35,7 +35,7 @@ function deny(m) { $('#app').innerHTML = `<div class="center"><div><div style="f
 
 function shell(content) {
   const T = [['dash', '📊 לוח בקרה'], ['reports', '⚠️ דיווחים', STATS.open_reports], ['verify', '🤳 אימותים', STATS.pending_verifications], ['users', '👥 משתמשים'], ['media', '🖼️ תמונות'], ['rooms', '🏠 חדרים'], ['log', '📜 יומן']];
-  $('#app').innerHTML = `<div class="adm"><div class="atop"><div class="logo">בלאש</div><span class="tag f">🛡️ אדמין</span><div class="grow"></div><a href="/" class="btn sec sm" style="text-decoration:none">לאפליקציה ←</a></div>
+  $('#app').innerHTML = `<div class="adm"><div class="atop"><div class="logo">קליק</div><span class="tag f">🛡️ אדמין</span><div class="grow"></div><a href="/" class="btn sec sm" style="text-decoration:none">לאפליקציה ←</a></div>
   <div class="tabs">${T.map(([k, l, n]) => `<button class="${tab === k ? 'on' : ''}" onclick="go('${k}')">${l}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>
   <div id="c">${content}</div></div>`;
   hydrate();

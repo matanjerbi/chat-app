@@ -155,14 +155,14 @@ async function loadDms() { const d = await api('/dms'); DMS = d.dms; updateBadge
 async function loadGallery() { GAL = await api('/gallery'); }
 function updateBadge() {
   const n = DMS.reduce((a, d) => a + (d.unread || 0), 0) + (GAL.requests || []).length;
-  document.title = (n ? `(${n}) ` : '') + 'בלאש';
+  document.title = (n ? `(${n}) ` : '') + 'קליק';
   const b = $('#navChatsBadge'); if (b) { b.textContent = n; b.style.display = n ? '' : 'none'; }
 }
 
 /* ---------- boot ---------- */
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-  if (!TOKEN) return renderOnboarding();
+  if (!TOKEN) return bindLanding();
   try {
     await refreshMe();
     await Promise.all([loadRooms(), loadDms(), loadGallery()]);
@@ -175,63 +175,40 @@ function showBanned(reason) {
   $('#app').innerHTML = `<div class="center"><div><div style="font-size:54px">⛔</div><h2>החשבון הושעה</h2><p class="mut" style="margin:10px 0">${esc(reason || 'בעקבות הפרת כללי הקהילה')}</p></div></div>`;
 }
 
-/* ---------- onboarding ---------- */
-let ob = { step: 0, nick: '', age: '', g: 'm', area: 0, look: ['talk', 'flirt'], lvl: 'flirt', emo: '😎', err: '' };
-function renderOnboarding() {
-  const steps = `<div class="steps">${[0, 1].map(i => `<i class="${i <= ob.step ? 'on' : ''}"></i>`).join("")}</div>`;
-  if (ob.step === 0) {
-    $('#app').innerHTML = `<div class="ob">${steps}
-    <div style="font-size:60px;margin-top:10px">💋</div>
-    <h1>ברוכים הבאים ל<span class="logo" style="font-size:34px">בלאש</span></h1>
-    <p class="mut">צ'אט והיכרויות אנונימיים למבוגרים. חופש מלא — בלי שיפוטיות, בלי צנזורה על מה שמבוגרים בוחרים יחד.</p>
-    <div class="card" style="display:flex;flex-direction:column;gap:12px">
-      <div class="rule"><b>🔞</b><div><strong>18+ בלבד.</strong><div class="mut small">אימות סלפי מעניק תג ✔ ומוכיח שאת/ה מי שאת/ה אומר/ת — גיל ומגדר. בלי מתחזים.</div></div></div>
-      <div class="rule"><b>🤝</b><div><strong>הסכמה זה הכול.</strong><div class="mut small">תוכן מפורש רק כששני הצדדים בחרו בו. תמונות מפורשות מגיעות מטושטשות.</div></div></div>
-      <div class="rule"><b>🕶️</b><div><strong>אנונימיות אמיתית.</strong><div class="mut small">כינוי בלבד. בלי טלפון, בלי מייל, מטא-דאטה ומיקום נמחקים מכל תמונה.</div></div></div>
-      <div class="rule"><b>🚫</b><div><strong>אפס סובלנות:</strong><div class="mut small">קטינים, הפצת תמונות של מישהו בלי רשותו, זנות והונאות. הרחקה לצמיתות ודיווח לרשויות.</div></div></div>
-    </div>
-    <label class="row small"><input type="checkbox" id="obAgree" style="width:auto"> אני מעל גיל 18 ומסכים/ה לכללי הקהילה</label>
-    <button class="btn" onclick="if(!$('#obAgree').checked)return toast('יש לאשר את הכללים');ob.step=1;renderOnboarding()">המשך</button>
-    <p class="mut small" style="text-align:center">אין פרופילים מזויפים. אין בוטים. אין חיובים מפתיעים.</p></div>`;
-    return;
-  }
-  $('#app').innerHTML = `<div class="ob">${steps}
-    <h1>מי את/ה הערב?</h1>
-    <p class="mut">רק כינוי. אפשר לשנות הכול בכל רגע.</p>
-    <div class="lbl">כינוי</div><input id="obNick" maxlength="16" placeholder="למשל: ליילה_בים" value="${esc(ob.nick)}">
-    <div class="row"><div class="grow"><div class="lbl">גיל</div><input id="obAge" type="number" min="18" max="99" placeholder="18+" value="${esc(ob.age)}"></div>
-    <div class="grow"><div class="lbl">אזור</div><select id="obArea">${AREAS.map((a, i) => `<option value="${i}" ${ob.area == i ? 'selected' : ''}>${a}</option>`).join("")}</select></div></div>
-    <div class="lbl">אני</div>
-    <div>${Object.entries(GLBL).map(([k, v]) => `<span class="chip ${ob.g === k ? 'on' : ''}" onclick="obKeep();ob.g='${k}';renderOnboarding()">${v}</span>`).join("")}</div>
-    <div class="lbl">אווטאר</div>
-    <div>${EMOJIS.slice(0, 12).map(e => `<span class="chip ${ob.emo === e ? 'on' : ''}" style="font-size:20px" onclick="obKeep();ob.emo='${e}';renderOnboarding()">${e}</span>`).join("")}</div>
-    <div class="lbl">מה אני מחפש/ת</div>
-    <div>${LOOK.map(([k, v]) => `<span class="chip ${ob.look.includes(k) ? 'on' : ''}" onclick="obKeep();ob.look.includes('${k}')?ob.look.splice(ob.look.indexOf('${k}'),1):ob.look.push('${k}');renderOnboarding()">${v}</span>`).join("")}</div>
-    <div class="lbl">רמת התוכן שלי</div>
-    <div class="lvl">${LEVELS.map(([k, e, n, d]) => `<button class="${ob.lvl === k ? 'on' : ''}" onclick="obKeep();ob.lvl='${k}';renderOnboarding()"><b>${e}</b>${n}<div class="mut" style="font-size:11px">${d}</div></button>`).join("")}</div>
-    <div class="err" id="obErr">${esc(ob.err)}</div>
-    <button class="btn" id="obGo" onclick="register()">יאללה, בואו נתחיל 🚀</button>
-    <button class="mut small" onclick="ob.step=0;renderOnboarding()">→ חזרה</button>
-  </div>`;
+/* ---------- landing / join ---------- */
+const LANDING_HTML = document.getElementById('app').innerHTML;
+const RANDOM_EMO = () => EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+function renderOnboarding() { $('#app').innerHTML = LANDING_HTML; bindLanding(); }
+function bindLanding() {
+  let g = 'm';
+  document.querySelectorAll('#jG button').forEach(b => b.onclick = () => { g = b.dataset.g; document.querySelectorAll('#jG button').forEach(x => x.classList.toggle('on', x === b)); });
+  $('#joinForm').onsubmit = async e => {
+    e.preventDefault();
+    const err = $('#jErr'); err.textContent = '';
+    const nick = $('#jNick').value.trim(), age = $('#jAge').value;
+    if (nick.length < 2) { err.textContent = 'בחר/י כינוי (2 תווים לפחות)'; return $('#jNick').focus(); }
+    if (!age || +age < 18) { err.textContent = 'הצ׳אט מיועד לגילאי 18 ומעלה בלבד'; return $('#jAge').focus(); }
+    if (!$('#jAgree').checked) { err.textContent = 'סמנ/י שאת/ה מעל 18 ומסכים/ה לכללים'; return; }
+    const btn = $('#jGo'); btn.disabled = true; btn.textContent = 'נכנסים…';
+    try {
+      const d = await api('/register', { body: { nick, age, gender: g, looking: ['talk', 'flirt'], lvl: 'flirt', emo: RANDOM_EMO(), agree: true } });
+      TOKEN = d.token; try { localStorage.setItem('blush_token', TOKEN); } catch (x) {}
+      ME = d.user; await boot();
+      toast('ברוך/ה הבא/ה! הכול פה חינם 🎉');
+    } catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = 'כניסה לצ׳אט — חינם ⚡'; }
+  };
+  $('#jHasKey').onclick = e => { e.preventDefault(); sheet(`<h2>כניסה עם מפתח גישה</h2><p class="mut small" style="margin:8px 0 12px">הדבק/י את המפתח ששמרת מהמכשיר הקודם (בלשונית "אני" ← "גישה ממכשיר אחר").</p><input id="tkIn" placeholder="מפתח גישה" style="direction:ltr"><button class="btn" style="margin-top:10px" onclick="useToken()">כניסה</button>`); };
+  fetch('/api/public/stats').then(r => r.json()).then(d => {
+    const o = $('#lOnline'); if (o) o.textContent = d.online >= 5 ? `● ${d.online} מחוברים עכשיו` : '● פעיל עכשיו';
+    const box = $('#lRooms'); if (box && d.rooms) box.innerHTML = d.rooms.map(r => `<div class="lroom">${esc(r.emo)} ${esc(r.name)}${r.online >= 3 ? `<i>● ${r.online}</i>` : ''}</div>`).join('');
+  }).catch(() => {});
 }
-function obKeep() { const n = $('#obNick'), a = $('#obAge'), r = $('#obArea'); if (n) ob.nick = n.value; if (a) ob.age = a.value; if (r) ob.area = +r.value; }
-async function register() {
-  obKeep();
-  const btn = $('#obGo'); btn.disabled = true;
-  try {
-    const d = await api('/register', { body: { nick: ob.nick, age: ob.age, gender: ob.g, area: ob.area, looking: ob.look, lvl: ob.lvl, emo: ob.emo, agree: true } });
-    TOKEN = d.token; try { localStorage.setItem('blush_token', TOKEN); } catch (e) {}
-    ME = d.user; await boot();
-    setTimeout(() => verifySheet(true), 800);
-  } catch (e) { ob.err = e.message; renderOnboarding(); }
-}
-
 /* ---------- main shell ---------- */
 function render() {
   if (!ME) return renderOnboarding();
   $('#app').innerHTML = `
   <div class="top">
-    <div class="logo">בלאש</div>
+    <div class="logo">קליק</div>
     <span class="tag g">● ${ONLINE} מחוברים</span>
     <div class="grow"></div>
     ${isPrem() ? '<span class="prem-pill">👑 פרימיום</span>' : '<button class="prem-pill" onclick="openPremium()">👑 שדרוג</button>'}
@@ -275,7 +252,7 @@ function roomsTab() {
 function verifyNudge() {
   if (!ME || ME.verified) return '';
   if (ME.verify_state === 1) return `<div class="card row small"><span style="font-size:22px">⏳</span><div class="grow">האימות שלך בבדיקה. נעדכן ברגע שיאושר.</div></div>`;
-  return `<div class="card row" onclick="verifySheet()" style="border-color:#5cc8ff66;cursor:pointer"><span style="font-size:24px">✔</span><div class="grow small"><strong>קבל/י תג מאומת/ת</strong><div class="mut">סלפי של 20 שניות. מאומתים מקבלים פי 4 יותר תגובות ונפתחת להם שיחת וידאו.</div></div><span>←</span></div>`;
+  return `<div class="card row" onclick="verifySheet()" style="border-color:#5cc8ff66;cursor:pointer"><span style="font-size:24px">✔</span><div class="grow small"><strong>קבל/י תג מאומת/ת</strong><div class="mut">סלפי של 20 שניות — כולם יידעו שאת/ה אמיתי/ת, ונפתחות לך שיחות וידאו.</div></div><span>←</span></div>`;
 }
 async function openRoom(id) {
   view = { t: 'room', id }; openView(view);
@@ -615,7 +592,7 @@ function endCall(notifyPeer) {
 /* ---------- premium ---------- */
 let selPlan = "m";
 function openPremium(reason) {
-  sheet(`<div style="text-align:center"><div style="font-size:48px">👑</div><h2 style="font-size:24px">בלאש פרימיום</h2><p class="mut small">${reason === 'video' ? 'שיחות וידאו פתוחות למנויים מאומתים — ככה אנחנו שומרים עליהן נקיות ממתחזים' : 'יותר חיבור, יותר שליטה'}</p></div>
+  sheet(`<div style="text-align:center"><div style="font-size:48px">👑</div><h2 style="font-size:24px">קליק פרימיום</h2><p class="mut small">${reason === 'video' ? 'שיחות וידאו פתוחות למנויים מאומתים — ככה אנחנו שומרים עליהן נקיות ממתחזים' : 'יותר חיבור, יותר שליטה'}</p></div>
   <div style="margin:14px 0">${[["📹", "שיחות וידאו ללא הגבלה (בין מאומתים)"], ["🕶️", "מצב אינקוגניטו — רק מי שאת/ה פונה אליו רואה אותך"], ["🚀", "בוסט — הופעה ראשונה בתוצאות (בקרוב)"], ["👀", "מי צפה בפרופיל שלך (בקרוב)"]].map(([e, t]) => `<div class="feat"><span style="font-size:20px">${e}</span>${t}</div>`).join("")}
   <div class="feat mut small">💬 הודעות, חדרים ותמונות — תמיד חינם לכולם</div></div>
   ${PLANS.map(p => `<div class="plan ${selPlan === p.id ? 'on' : ''}" onclick="selPlan='${p.id}';openPremium('${reason || ''}')"><div class="grow"><strong>${p.name}</strong> ${p.hot ? '<span class="tag x">הכי פופולרי</span>' : ''}${p.save ? `<div class="small" style="color:var(--ok)">${p.save}</div>` : ''}</div><div style="text-align:left"><span class="pr">₪${p.price}</span><div class="mut small">${p.per}</div></div></div>`).join("")}
@@ -694,7 +671,7 @@ async function enableNotifs() {
 let deferredInstall = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; });
 function installSheet() {
-  sheet(`<h2>📲 התקנה על המכשיר</h2><p class="mut" style="margin:8px 0 14px">בלאש עובד כאפליקציה מלאה — בלי חנות.</p>
+  sheet(`<h2>📲 התקנה על המכשיר</h2><p class="mut" style="margin:8px 0 14px">קליק עובד כאפליקציה מלאה — בלי חנות.</p>
   ${deferredInstall ? '<button class="btn" onclick="deferredInstall.prompt();closeSheet()">התקן/י עכשיו</button>' : ''}
   <div class="card" style="margin-top:10px"><strong>אנדרואיד (Chrome)</strong><p class="mut small">⋮ ← "הוסף למסך הבית" / "התקן אפליקציה"</p></div><div class="card"><strong>אייפון (Safari)</strong><p class="mut small">⬆️ שיתוף ← "הוסף למסך הבית"</p></div>`);
 }
@@ -702,7 +679,7 @@ function safetySheet() {
   sheet(`<h2>🛡️ מרכז בטיחות</h2>
   ${[["🔞", "18+ ואימות סלפי", "כל משתמש מאומת נבדק ידנית: אדם אמיתי, בגיר, ומגדר נכון. בלי מתחזים."], ["🤝", "הסכמה לפני תוכן", "רמות שיחה הדדיות. תמונות מפורשות מטושטשות עד שבוחרים לפתוח. אי אפשר לשלוח תמונה למי שלא ענה."], ["📷", "התמונות שלך — שלך", "גלריה נעולה, גישה לפי אישור, ביטול בכל רגע, תמונות חד-פעמיות, מחיקת מטא-דאטה ומיקום."], ["🧯", "תמונה שלך פורסמה בלי רשות?", "דיווח ← הסרה מיידית. עזרה נוספת: StopNCII.org"], ["💸", "לעולם אל תשלח/י כסף", "בקשת כסף, 'ספונסר' או 'מתנה' = הונאה. דווח/י."], ["🚪", "מחיקה מלאה", "מחיקת שיחה — אצל שני הצדדים. מחיקת חשבון — הכול נעלם."]].map(([e, t, d]) => `<div class="rule" style="margin:12px 0"><b>${e}</b><div><strong>${t}</strong><div class="mut small">${d}</div></div></div>`).join("")}`);
 }
-async function wipe() { try { await api('/me', { method: 'DELETE' }); } catch (e) {} logoutLocal(); closeSheet(); ob = { step: 0, nick: '', age: '', g: 'm', area: 0, look: ['talk', 'flirt'], lvl: 'flirt', emo: '😎', err: '' }; renderOnboarding(); }
+async function wipe() { try { await api('/me', { method: 'DELETE' }); } catch (e) {} logoutLocal(); closeSheet(); renderOnboarding(); }
 
 /* ---------- views / sheets ---------- */
 function openView(v, silent) {
