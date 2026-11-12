@@ -1,0 +1,28 @@
+name = "blush"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "blush-db"
+database_id = "4a912925-159c-4b94-a665-e2b5be56742c"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "MEDIA"
+id = "12749e564fa94061bafff26446bcf7e2"
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub"]
+
+[observability]
+enabled = true

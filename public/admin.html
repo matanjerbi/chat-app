@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>בלאש · אדמין</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+body{display:block}
+.adm{max-width:1100px;margin:0 auto;padding:16px}
+.atop{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button{padding:9px 14px;border-radius:12px;background:var(--card);border:1px solid var(--line);font-size:14px;position:relative}
+.tabs button.on{background:#ff4f8b26;border-color:var(--pink)}
+.tabs .n{background:var(--bad);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px;margin-right:4px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+.stat b{font-size:28px;display:block}
+.stat.warn{border-color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:right;vertical-align:middle}
+th{color:var(--mut);font-weight:500;font-size:12px}
+.acts{display:flex;gap:5px;flex-wrap:wrap}
+.acts button{padding:6px 10px;border-radius:9px;background:var(--card2);border:1px solid var(--line);font-size:12px}
+.acts .bad{background:#ff5d5d22;border-color:var(--bad);color:#ffb3b3}
+.acts .ok{background:#3ddc9722;border-color:var(--ok);color:#9ff0c9}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.vcard{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.vcard .ph{height:300px;background:#000 center/contain no-repeat}
+.vcard .b{padding:12px}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.mgrid .it{border-radius:12px;overflow:hidden;background:var(--card);border:1px solid var(--line)}
+.mgrid .ph{height:140px;background:#000 center/cover no-repeat;filter:blur(12px);cursor:pointer;transition:.2s}
+.mgrid .ph.show{filter:none}
+.mgrid .b{padding:6px;font-size:11px}
+.pr2{color:var(--bad);font-weight:700}.pr1{color:var(--gold)}
+.ctx{background:var(--bg2);border-radius:12px;padding:10px;max-height:300px;overflow:auto;font-size:13px}
+.ctx div{padding:3px 0;border-bottom:1px dashed var(--line)}
+</style>
+</head>
+<body>
+<div id="app" style="max-width:none;height:auto;min-height:100%;overflow:visible"><div class="center"><div class="spinner"></div></div></div>
+<script src="/admin.js"></script>
+</body>
+</html>
