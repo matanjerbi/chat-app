@@ -120,6 +120,8 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
+    // one public address: send the old workers.dev host to klik-chat.pages.dev
+    if (url.hostname.endsWith('.workers.dev') && env.PUBLIC_ORIGIN) return Response.redirect(env.PUBLIC_ORIGIN + p + url.search, 301);
     if (p === '/robots.txt') return new Response(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nSitemap: ${url.origin}/sitemap.xml\n`, { headers: { 'content-type': 'text/plain' } });
     if (p === '/sitemap.xml') return new Response(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${url.origin}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url></urlset>`, { headers: { 'content-type': 'application/xml' } });
     if (!p.startsWith('/api/')) {

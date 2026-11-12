@@ -32,3 +32,8 @@ enabled = true
 # one network hop from the phone, then every DB query is local (~1ms instead of ~50ms each).
 [placement]
 mode = "smart"
+
+[vars]
+# Public values (the Google client ID is visible in every browser anyway)
+GOOGLE_CLIENT_ID = "259934025109-4p70squ1i0eslm5t5d0gba318emnei2v.apps.googleusercontent.com"
+PUBLIC_ORIGIN = "https://klik-chat.pages.dev"
